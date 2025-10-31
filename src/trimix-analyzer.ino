@@ -1,12 +1,13 @@
 // Trimix Analyzer
 // Original: Yves Caze, Savoie Plongee
 // Mods: GoDive BRB (2021), Dominik Wiedmer (2021–2024), Heikki Pulkkinen (2025)
-// Version 1.1  4.10.2021
-// Version 1.2  7.10.2023  Change of library names, calibration goal less strict
-// Version 20240601  Added calc for calibration offset, so that entered value = mV@100% He
-//                   Added He 0 calib during O2 calib & message if O2 < 7mV and no calibration
-// Version 20241017  Removed display blinking
-// Version 20251031  Added 100% He calibration by long press, translated everything to English
+// Version 1.1 4.10.2021
+// Version 1.2 7.10.2023 Change of library names, Calibration goal less strict
+// Version 20240601 Added calc for calibration offset, so that the value to be entered is =mV@100% He
+// added He 0 calib during O2 calib & Message if O2 < 7mV and no calibration
+// Version 20241017 remove blinking of display
+// Version 20251031 add option for 100% He calibration by long press, translate everything to Enlish etc.
+// Version 20251031b refactor display: always show O2mV & He mV at top
 
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
@@ -16,39 +17,39 @@
 #include <SPI.h>
 #include <FlashStorage.h>
 
-#define SCREEN_WIDTH     128
-#define SCREEN_HEIGHT     64
-#define OLED_RESET        -1
-#define I2C_ADDRESS     0x3C
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+#define i2c_Address 0x3c
 #define SH110X_NO_SPLASH
-#define MAGIC_VALUE  0xBEEFCAFE
-
-#define BUTTON_PIN        1
-#define LONG_PRESS_TIME 2000   // 2 seconds
-#define N_MEASUREMENTS     10
+#define MAGIC_VALUE    0xBEEFCAFE
+#define BUTTON_PIN 1  // Calibration button
+#define LONG_PRESS_TIME 2000  // 2 seconds
+#define N_MEASUREMENTS 10
 
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
 Adafruit_ADS1115 ads;
 
 // -------- Calibration & constants --------
-float Vcalib = 0;            // mV reading for 20.9% O2 (air)
-float voltage = 0;           // O2 sensor voltage (mV)
-float bridge = 0;            // He sensor bridge voltage (mV)
-float minVO2 = 7.00;         // Minimum valid O2 sensor voltage for air
-float minVHe = 200;          // Minimum valid He sensor voltage for 100% Helium
-float bridgeCalib = 0;       // Offset for He bridge
-float TempComp = 0;          // Temperature compensation (time-based)
+float Vcalib = 0;          // mV reading for 20.9% O2 (air)
+float voltage = 0;         // O2 sensor voltage (mV)
+float bridge = 0;          // He sensor bridge voltage (mV)
+float minVO2 = 7.00;       // Minimum valid O2 sensor voltage for air
+float minVHe = 200;        // Minimum valid He sensor voltage for 100% Helium
+float bridgeCalib = 0;     // Offset for He bridge
+float TempComp = 0;        // Temperature compensation (time-based)
 unsigned long time;
 
-// Initial He calibration values (before user calibration)
-float calibMD62 = 595.56;    
-float calibMD62_corr = calibMD62 * (100 / 87.083);
+// Initial values which are used before first He calibration
+float calibMD62 = 595.56;  // Measured mV @ 100% He (user-calibrated)
+float calibMD62_corr = calibMD62 * (100 / 87.083);   // adjust so user enters real mV@100%He
 
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
 
-RunningAverage RA0(10);  // Moving average for O2
-RunningAverage RA1(10);  // Moving average for He
+RunningAverage RA0(N_MEASUREMENTS);     // Moving average for O2
+RunningAverage RA1(N_MEASUREMENTS);     // Moving average for He
 
 // ---------- Helper: Temperature Compensation ----------
 float getTempComp(unsigned long t) {
@@ -72,18 +73,44 @@ float getTempComp(unsigned long t) {
   return 0;
 }
 
+// ---------- Display Handling ----------
+void updateTopDisplay(float o2mv, float hemv) {
+  // --- Always show O2mV and He mV on top of screen ---
+  display.fillRect(0, 0, 128, 16, SH110X_BLACK);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.print("O2mV ");
+  display.print(o2mv, 2);
+  display.setCursor(66, 0);
+  display.print("He mV ");
+  display.print(hemv, 0);
+  display.display();
+}
+
+void showBottomMessage(const String &line1, const String &line2 = "", const String &line3 = "") {
+  // --- Utility for bottom-area messages ---
+  display.fillRect(0, 18, 128, 46, SH110X_BLACK);
+  display.setTextSize(1);
+  if (line1.length()) { display.setCursor(10, 20); display.print(line1); }
+  if (line2.length()) { display.setCursor(10, 30); display.print(line2); }
+  if (line3.length()) { display.setCursor(10, 40); display.print(line3); }
+  display.display();
+}
+
 // ---------- Button Handling ----------
 void handleButton() {
   static bool buttonPressed = false;
   static bool longPressTriggered = false;
   static unsigned long pressStartTime = 0;
   static unsigned long lastDebounceTime = 0;
-  const unsigned long debounceDelay = 50;
+  const unsigned long debounceDelay = 50; // 50 ms debounce
 
   int reading = digitalRead(BUTTON_PIN);
 
+  // Debounce: only accept changes after stable state
   if (millis() - lastDebounceTime > debounceDelay) {
     if (reading == LOW && !buttonPressed) {
+      // Button just pressed
       buttonPressed = true;
       longPressTriggered = false;
       pressStartTime = millis();
@@ -91,20 +118,22 @@ void handleButton() {
     }
 
     if (buttonPressed && reading == LOW) {
+      // Button is being held
       unsigned long pressDuration = millis() - pressStartTime;
       if (!longPressTriggered && pressDuration >= LONG_PRESS_TIME) {
         longPressTriggered = true;
-        calibrateHe();
+        calibrateHe();  // Long press triggers He calibration
       }
     }
 
     if (buttonPressed && reading == HIGH) {
+      // Button released
       unsigned long pressDuration = millis() - pressStartTime;
       buttonPressed = false;
       lastDebounceTime = millis();
 
       if (!longPressTriggered && pressDuration < LONG_PRESS_TIME) {
-        calibrateO2();
+        calibrateO2();  // Short press triggers O2 calibration
       }
     }
   }
@@ -112,12 +141,17 @@ void handleButton() {
 
 // ---------- Measurement Update ----------
 void updateMeasurements() {
-  ads.setGain(GAIN_SIXTEEN);  // ±0.256 V range
+  // --- Channel 0–1: 0–50 mV ---
+  ads.setGain(GAIN_SIXTEEN);                 // ±0.256 V range
   int16_t adc0 = ads.readADC_Differential_0_1();
   RA0.addValue(adc0);
-  voltage = abs(RA0.getAverage() * (0.256 / 32768.0 * 1000));
+  voltage = RA0.getAverage() * (0.256 / 32768.0 * 1000);
 
-  ads.setGain(GAIN_FOUR);     // ±1.024 V range
+  // Voltage is negative only if the sensor is plugged in the wrong way
+  voltage = abs(voltage);
+
+  // --- Channel 2–3: 0–650 mV ---
+  ads.setGain(GAIN_FOUR);                    // ±1.024 V range
   int16_t adc1 = ads.readADC_Differential_2_3();
   RA1.addValue(adc1);
   bridge = RA1.getAverage() * (1.024 / 32768.0 * 1000);
@@ -125,24 +159,14 @@ void updateMeasurements() {
 
 // ---------- O2 Calibration ----------
 void calibrateO2() {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(10, 0);  display.print("Calibration");
-  display.setCursor(10,10);  display.print("O2 Sensor");
-  display.setCursor(10,20);  display.print("(Air 20.9% O2)");
-  display.display();
+  showBottomMessage("Calibration", "O2 Sensor", "(Air 20.9% O2)");
   delay(1000);
 
+  // Check if O2 cell is too weak
   if (voltage < minVO2) {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(10,20); display.print("Error with O2");
-    display.setCursor(10,30); display.print("calibration");
-    display.setCursor(10,40); display.print("V cal = ");
-    display.print(voltage, 2); display.print(" mV");
-    display.display();
+    showBottomMessage("Error with O2", "calibration", "V cal = " + String(voltage, 2) + " mV");
     delay(10000);
-    display.clearDisplay();
+    showBottomMessage("");
     return;
   }
 
@@ -153,17 +177,12 @@ void calibrateO2() {
     delay(200);
   }
 
-  Vavg /= N_MEASUREMENTS;
-  Vcalib = Vavg;
-
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(10,20); display.print("Calibration OK");
-  display.setCursor(10,30); display.print("V cal = ");
-  display.print(Vcalib, 2); display.print(" mV");
-  display.display();
+  showBottomMessage("Calibration OK");
+  Vavg = Vavg / N_MEASUREMENTS;
+  Vcalib = Vavg; // store reference voltage for 20.9% O2
+  showBottomMessage("Calibration OK", "V cal = " + String(Vcalib, 2) + " mV");
   delay(2000);
-  display.clearDisplay();
+  showBottomMessage("");
 }
 
 // ---------- He Calibration ----------
@@ -178,24 +197,13 @@ void loadHeCalib() {
 }
 
 void calibrateHe() {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(10, 0);  display.print("Calibration");
-  display.setCursor(10,10);  display.print("He Sensor");
-  display.setCursor(10,20);  display.print("(100% He)");
-  display.display();
+  showBottomMessage("Calibration", "He Sensor", "(100% He)");
   delay(1000);
 
   if (bridge < minVHe) {
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setCursor(10,20); display.print("Error with He");
-    display.setCursor(10,30); display.print("calibration");
-    display.setCursor(10,40); display.print("V cal = ");
-    display.print(bridge, 2); display.print(" mV");
-    display.display();
+    showBottomMessage("Error with He", "calibration", "V cal = " + String(bridge, 2) + " mV");
     delay(10000);
-    display.clearDisplay();
+    showBottomMessage("");
     return;
   }
 
@@ -205,135 +213,94 @@ void calibrateHe() {
     Vavg += bridge;
     delay(200);
   }
+  Vavg = Vavg / N_MEASUREMENTS;
 
-  Vavg /= N_MEASUREMENTS;
-  calibMD62 = Vavg;
-  calibMD62_corr = calibMD62 * (100 / 87.083);
-  saveHeCalib();
+  calibMD62 = Vavg;  // Measured mV @ 100% He
+  calibMD62_corr = calibMD62 * (100 / 87.083);   // adjust so user enters real mV@100%He
+  saveHeCalib(); // Save value in EEPROM.
 
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(10,20); display.print("He Calibration OK");
-  display.setCursor(10,30); display.print("V cal = ");
-  display.print(bridge, 2); display.print(" mV");
-  display.display();
+  showBottomMessage("He Calibration OK", "V cal = " + String(bridge, 2) + " mV");
   delay(2000);
-  display.clearDisplay();
+  showBottomMessage("");
 }
 
 // ---------- Setup ----------
-void setup() {
+void setup(void) {
   Serial.begin(9600);
   Wire.begin();
   Wire.setClock(400000L);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(1, INPUT_PULLUP); // Button for manual calibration
 
-  display.begin(I2C_ADDRESS, true);
+  display.begin(i2c_Address, true);
   display.clearDisplay();
+
+  delay(1000);
   display.setTextSize(1);
   display.setTextColor(SH110X_WHITE, SH110X_BLACK);
-  display.setCursor(10,20); display.print("Kaasuvelho");
-  display.setCursor(10,40); display.print("v0.9 beta");
-  display.display();
+  showBottomMessage("Kaasuvelho", "v0.9 beta");
   delay(4000);
 
   ads.begin();
   updateMeasurements();
+  updateTopDisplay(voltage, bridge);
 
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setCursor(10, 0);  display.print("He Bridge");
-  display.setCursor(10,10); display.print("V cell = ");
-  display.print(voltage, 2); display.print(" mV");
-  display.setCursor(10,20); display.print("V bridge = ");
-  display.print(bridge, 2); display.print(" mV");
-  display.display();
-  delay(2000);
-
-  calibrateO2();
+  calibrateO2(); // run O2 calibration on startup
   loadHeCalib();
 
+  // wait until He sensor warms up
   while (bridge > 10) {
     updateMeasurements();
-    display.clearDisplay();
-    display.setCursor(10, 0);  display.print("Preheating");
-    display.setCursor(10,20); display.print("Helium sensor...");
-    display.setCursor(10,40); display.print("V bridge= ");
-    display.print(bridge, 0); display.print(" mV");
-    display.display();
+    updateTopDisplay(voltage, bridge);
+    showBottomMessage("Preheating", "Helium sensor...", "V bridge= " + String(bridge, 0) + " mV");
     delay(50);
   }
 
-  display.clearDisplay();
-  display.setCursor(10,10); display.print("Helium sensor OK");
-  display.display();
+  showBottomMessage("Helium sensor OK");
   delay(1000);
-
-  display.clearDisplay();
-  display.setCursor(10,10); display.print("Analyzer ready");
-  display.display();
+  showBottomMessage("Analyzer ready");
   delay(1000);
-  display.clearDisplay();
+  showBottomMessage("");
 }
 
 // ---------- Main Loop ----------
 void loop() {
+  // Read raw ADC values
   time = millis();
   updateMeasurements();
+  updateTopDisplay(voltage, bridge);
 
-  float nitrox = voltage * (20.9 / Vcalib);
+  // --- O2 calculation ---
+  float nitrox = voltage * (20.9 / Vcalib);  // scale by calibration value
 
-  display.fillRect(24, 0, 36, 10, SH110X_BLACK);
-  display.setTextSize(1);
-  display.setCursor(0,0);  display.print("O2: ");
-  display.print(nitrox, 1); display.print(" %");
-
-  display.fillRect(36,10,30,10,SH110X_BLACK);
-  display.setCursor(0,10); display.print("O2mV ");
-  display.print(voltage, 2);
-
-  display.fillRect(90,10,38,10,SH110X_BLACK);
-  display.setCursor(66,10); display.print("He mV ");
-  display.print(bridge, 0);
-  display.display();
-
-  bridge -= bridgeCalib;
+  // --- He bridge corrections ---
+  bridge -= bridgeCalib;     // subtract stored offset
   TempComp = getTempComp(time);
-  bridge -= TempComp;
+  bridge -= TempComp;        // apply compensation
 
-  display.fillRect(90,0,38,10,SH110X_BLACK);
-  display.setCursor(66,0);
-  display.setTextSize(1);
-  display.print("He: ");
+  // --- He percentage calculation ---
+  float helium = 100 * bridge / calibMD62_corr;        // linear %He estimate
+  if (helium > 50)
+    helium = helium * (1 + (helium - 50) * 0.4 / 100);
+  if (helium < 2) helium = 0;
 
-  float helium = 100 * bridge / calibMD62_corr;
-  if (helium > 50) helium *= (1 + (helium - 50) * 0.4 / 100);
-
-  if (helium > 2) {
-    display.print(helium, 1);
-    display.print(" %");
-  } else {
-    helium = 0;
-    display.print("0 %");
-  }
-
-  display.fillRect(0,25,128,39,SH110X_BLACK);
-  display.setCursor(10,25);
+  // --- Bottom gas mix display ---
+  display.fillRect(0, 18, 128, 46, SH110X_BLACK);  // clear full lower area
+  display.setCursor(10, 25);
   display.setTextSize(2);
-
   if (helium > 0) {
     display.print("Trimix ");
-    display.setCursor(10,45);
+    display.setCursor(10, 45);
     display.print(nitrox, 0);
     display.print(" / ");
     display.print(helium, 0);
   } else {
     display.print("Nitrox ");
-    display.setCursor(10,45);
+    display.setCursor(10, 45);
     display.print(nitrox, 0);
   }
-
   display.display();
+
+  // Manual recalibration when button is pressed
   handleButton();
   delay(100);
 }

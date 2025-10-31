@@ -25,6 +25,8 @@ Or  **[%N2] = [100% of Trimix] - [%He +%O2]**
 ## Code C++ (Arduino)
 
 - [Sketch Trimix-analyzer.ino](https://github.com/captainigloo/Trimix-analyzer/blob/master/src/trimix-analyzer.ino)
+- [Further developed version](https://www.printables.com/model/677331-trimix-analyser-v2)
+- Any changes after that are made by [me](https://github.com/hjpulkki/) and can be found from [this repository](https://github.com/hjpulkki/Trimix-analyzer/blob/master/src/trimix-analyzer.ino)
 
 ## Bill of materials
 

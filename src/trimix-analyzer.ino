@@ -47,45 +47,46 @@ float calibMD62_corr = calibMD62 * (100 / 87.083);   // adjust so user enters re
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
 
-char user[] = "Kaasuvelho v0.9 beta";
-
 RunningAverage RA0(10);     // Moving average for O2
 RunningAverage RA1(10);     // Moving average for He
-
-int16_t adc0, adc1;
 
 void handleButton() {
   static bool buttonPressed = false;
   static bool longPressTriggered = false;
   static unsigned long pressStartTime = 0;
+  static unsigned long lastDebounceTime = 0;
+  const unsigned long debounceDelay = 50; // 50 ms debounce
 
-  int buttonState = digitalRead(BUTTON_PIN);
+  int reading = digitalRead(BUTTON_PIN);
 
-  if (buttonState == LOW && !buttonPressed) {
-    // Button just pressed
-    buttonPressed = true;
-    longPressTriggered = false;
-    pressStartTime = millis();
-  }
-
-  if (buttonPressed && buttonState == LOW) {
-    // Button is still being held
-    unsigned long pressDuration = millis() - pressStartTime;
-
-    if (!longPressTriggered && pressDuration >= LONG_PRESS_TIME) {
-      longPressTriggered = true;
-      calibrateHe();  // trigger long press immediately
+  // Debounce: only accept changes after stable state
+  if (millis() - lastDebounceTime > debounceDelay) {
+    if (reading == LOW && !buttonPressed) {
+      // Button just pressed
+      buttonPressed = true;
+      longPressTriggered = false;
+      pressStartTime = millis();
+      lastDebounceTime = millis();
     }
-  }
 
-  if (buttonPressed && buttonState == HIGH) {
-    // Button released
-    unsigned long pressDuration = millis() - pressStartTime;
-    buttonPressed = false;
+    if (buttonPressed && reading == LOW) {
+      // Button is being held
+      unsigned long pressDuration = millis() - pressStartTime;
+      if (!longPressTriggered && pressDuration >= LONG_PRESS_TIME) {
+        longPressTriggered = true;
+        calibrateHe();  // Long press triggers He calibration
+      }
+    }
 
-    // Only trigger short press if long press wasn’t already handled
-    if (!longPressTriggered && pressDuration < LONG_PRESS_TIME) {
-      calibrateO2();
+    if (buttonPressed && reading == HIGH) {
+      // Button released
+      unsigned long pressDuration = millis() - pressStartTime;
+      buttonPressed = false;
+      lastDebounceTime = millis();
+
+      if (!longPressTriggered && pressDuration < LONG_PRESS_TIME) {
+        calibrateO2();  // Short press triggers O2 calibration
+      }
     }
   }
 }
@@ -98,7 +99,7 @@ void updateMeasurements() {
   voltage = RA0.getAverage() * (0.256 / 32768.0 * 1000);
 
   // Voltage is negative only if the sensor is plugged in the wrong way
-  voltage = abs(voltage)
+  voltage = abs(voltage);
 
   // --- Channel 2–3: 0–650 mV ---
   ads.setGain(GAIN_FOUR);                    // ±1.024 V range
@@ -376,7 +377,6 @@ void loop() {
     helium = 0;
     display.print("0 %");
   }
-  display.display();
 
   // --- Bottom gas mix display ---
   display.fillRect(0, 25, 128, 39, SH110X_BLACK);  // clear full lower area

@@ -50,6 +50,28 @@ FlashStorage(hecorrStore, float);
 RunningAverage RA0(10);  // Moving average for O2
 RunningAverage RA1(10);  // Moving average for He
 
+// ---------- Helper: Temperature Compensation ----------
+float getTempComp(unsigned long t) {
+  if (t < 30000)  return 18;
+  if (t < 40000)  return 17;
+  if (t < 50000)  return 16;
+  if (t < 60000)  return 15;
+  if (t < 70000)  return 14;
+  if (t < 80000)  return 13;
+  if (t < 90000)  return 12;
+  if (t < 105000) return 11;
+  if (t < 120000) return 10;
+  if (t < 150000) return 9;
+  if (t < 165000) return 8;
+  if (t < 180000) return 7;
+  if (t < 210000) return 6;
+  if (t < 240000) return 5;
+  if (t < 270000) return 4;
+  if (t < 300000) return 3;
+  if (t < 360000) return 2;
+  return 0;
+}
+
 // ---------- Button Handling ----------
 void handleButton() {
   static bool buttonPressed = false;
@@ -276,26 +298,7 @@ void loop() {
   display.display();
 
   bridge -= bridgeCalib;
-
-  if (time < 480000) TempComp = 0;
-  if (time < 360000) TempComp = 2;
-  if (time < 300000) TempComp = 3;
-  if (time < 270000) TempComp = 4;
-  if (time < 240000) TempComp = 5;
-  if (time < 210000) TempComp = 6;
-  if (time < 180000) TempComp = 7;
-  if (time < 165000) TempComp = 8;
-  if (time < 150000) TempComp = 9;
-  if (time < 120000) TempComp = 10;
-  if (time < 105000) TempComp = 11;
-  if (time < 90000)  TempComp = 12;
-  if (time < 80000)  TempComp = 13;
-  if (time < 70000)  TempComp = 14;
-  if (time < 60000)  TempComp = 15;
-  if (time < 50000)  TempComp = 16;
-  if (time < 40000)  TempComp = 17;
-  if (time < 30000)  TempComp = 18;
-
+  TempComp = getTempComp(time);
   bridge -= TempComp;
 
   display.fillRect(90,0,38,10,SH110X_BLACK);
@@ -329,8 +332,8 @@ void loop() {
     display.setCursor(10,45);
     display.print(nitrox, 0);
   }
-  display.display();
 
+  display.display();
   handleButton();
   delay(100);
 }

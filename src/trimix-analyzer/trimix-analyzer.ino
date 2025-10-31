@@ -25,7 +25,7 @@
 #define MAGIC_VALUE    0xBEEFCAFE
 #define BUTTON_PIN 1  // Calibration button
 #define LONG_PRESS_TIME 2000  // 2 seconds
-#define N_MEASUREMENTS 10
+#define N_MEASUREMENTS 20
 
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -38,7 +38,6 @@ float bridge = 0;          // He sensor bridge voltage (mV)
 float minVO2 = 7.00;       // Minimum valid O2 sensor voltage for air
 float minVHe = 200;        // Minimum valid He sensor voltage for 100% Helium
 float bridgeCalib = 0;     // Offset for He bridge
-float TempComp = 0;        // Temperature compensation (time-based)
 unsigned long time;
 
 // Initial values which are used before first He calibration
@@ -95,6 +94,7 @@ void showBottomMessage(const String &line1, const String &line2 = "", const Stri
   if (line2.length()) { display.setCursor(10, 30); display.print(line2); }
   if (line3.length()) { display.setCursor(10, 40); display.print(line3); }
   display.display();
+  display.setCursor(5, 50);
 }
 
 // ---------- Button Handling ----------
@@ -155,9 +155,10 @@ void updateMeasurements() {
   int16_t adc1 = ads.readADC_Differential_2_3();
   RA1.addValue(adc1);
   bridge = RA1.getAverage() * (1.024 / 32768.0 * 1000);
-}
+  bridge -= getTempComp(time)
+;}
 
-// ---------- O2 Calibration ----------
+// ---------- Air Calibration ----------
 void calibrateO2() {
   showBottomMessage("Calibration", "O2 Sensor", "(Air 20.9% O2)");
   delay(1000);
@@ -172,15 +173,23 @@ void calibrateO2() {
 
   float Vavg = 0;
   for (int i = 0; i < N_MEASUREMENTS; i++) {
-    updateMeasurements();
-    Vavg += voltage;
-    delay(200);
+    for (int j = 0; j < N_MEASUREMENTS; j++) {
+      updateMeasurements();
+      delay(25);
+    }
+    Vavg += voltage;   // Average over moving averages
+    display.print(".");
+    display.display();
   }
 
   showBottomMessage("Calibration OK");
   Vavg = Vavg / N_MEASUREMENTS;
   Vcalib = Vavg; // store reference voltage for 20.9% O2
-  showBottomMessage("Calibration OK", "V cal = " + String(Vcalib, 2) + " mV");
+  
+  // TODO: Use average
+  bridgeCalib = -bridge;
+
+  showBottomMessage("Calibration OK", "V cal = " + String(Vcalib, 2) + " mV", "He Zero = " + String(bridge, 0) + " mV");
   delay(2000);
   showBottomMessage("");
 }
@@ -211,6 +220,8 @@ void calibrateHe() {
   for (int i = 0; i < N_MEASUREMENTS; i++) {
     updateMeasurements();
     Vavg += bridge;
+    display.print(".");
+    display.display();
     delay(200);
   }
   Vavg = Vavg / N_MEASUREMENTS;
@@ -244,9 +255,6 @@ void setup(void) {
   updateMeasurements();
   updateTopDisplay(voltage, bridge);
 
-  calibrateO2(); // run O2 calibration on startup
-  loadHeCalib();
-
   // wait until He sensor warms up
   while (bridge > 10) {
     updateMeasurements();
@@ -254,9 +262,13 @@ void setup(void) {
     showBottomMessage("Preheating", "Helium sensor...", "V bridge= " + String(bridge, 0) + " mV");
     delay(50);
   }
-
-  showBottomMessage("Helium sensor OK");
+  delay(5000);
+  showBottomMessage("Helium sensor ready");
   delay(1000);
+
+  calibrateO2(); // run O2 calibration on startup
+  loadHeCalib();
+
   showBottomMessage("Analyzer ready");
   delay(1000);
   showBottomMessage("");
@@ -272,13 +284,8 @@ void loop() {
   // --- O2 calculation ---
   float nitrox = voltage * (20.9 / Vcalib);  // scale by calibration value
 
-  // --- He bridge corrections ---
-  bridge -= bridgeCalib;     // subtract stored offset
-  TempComp = getTempComp(time);
-  bridge -= TempComp;        // apply compensation
-
   // --- He percentage calculation ---
-  float helium = 100 * bridge / calibMD62_corr;        // linear %He estimate
+  float helium = 100 * (bridge-bridgeCalib) / calibMD62_corr;        // linear %He estimate
   if (helium > 50)
     helium = helium * (1 + (helium - 50) * 0.4 / 100);
   if (helium < 2) helium = 0;

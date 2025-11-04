@@ -34,19 +34,19 @@ Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, 
 Adafruit_ADS1115 ads;
 
 // -------- Calibration & constants --------
-float Vcalib = 0;          // mV reading for 20.9% O2 (air)
-float voltage = 0;         // O2 sensor voltage (mV)
-float bridge = 0;          // He sensor bridge voltage (mV)
-float minVO2 = 7.00;       // Minimum valid O2 sensor voltage for air
+float o2_calib = 0;          // mV reading for 20.9% O2 (air)
+float o2_voltage = 0;         // O2 sensor voltage (mV)
+float he_voltage = 0;          // He sensor bridge voltage (mV)
+float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
 float max_vo2_for_he = 1;  // Maximum O2 sensor reading for 100% Helium (Mv)
-float minVHe = 200;        // Minimum valid He sensor voltage for 100% Helium
+float min_he_calib = 200;        // Minimum valid He sensor voltage for 100% Helium
 float max_he_zero = 50;    // Maximum absolute value for the zero point of He sensor
 float he_zero = 0;         // Offset for He bridge
 unsigned long time;
 
 // Initial values which are used before first He calibration
-float calibMD62 = 595.56;  // Measured mV @ 100% He (user-calibrated)
-float calibMD62_corr = calibMD62 * (100 / 87.083);   // adjust so user enters real mV@100%He
+float he_calib = 595.56;  // Measured mV @ 100% He (user-calibrated)
+float he_calib_corr = he_calib * (100 / 87.083);   // adjust so user enters real mV@100%He
 
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
@@ -55,7 +55,8 @@ RunningAverage RA0(N_MEASUREMENTS);     // Moving average for O2
 RunningAverage RA1(N_MEASUREMENTS);     // Moving average for He
 
 // ---------- Helper: Temperature Compensation ----------
-float getTempComp(unsigned long t) {
+float getTempComp() {
+  t = millis()
   if (t < 30000)  return 18;
   if (t < 40000)  return 17;
   if (t < 50000)  return 16;
@@ -151,10 +152,10 @@ void updateMeasurements() {
   RA0.addValue(adc0);
 
   // Convert the raw measurement to mV based on GAIN_SIXTEEN
-  voltage = RA0.getAverage() * (0.256 / 32768.0 * 1000);
+  o2_voltage = RA0.getAverage() * (0.256 / 32768.0 * 1000);
 
   // Voltage is negative only if the sensor is plugged in the wrong way
-  voltage = abs(voltage);
+  o2_voltage = abs(o2_voltage);
 
   // --- Channel 2–3: 0–650 mV ---
   ads.setGain(GAIN_FOUR);                    // ±1.024 V range
@@ -162,11 +163,11 @@ void updateMeasurements() {
   RA1.addValue(adc1);
 
   // Convert the raw measurement to mV based on GAIN_FOUR
-  bridge = RA1.getAverage() * (1.024 / 32768.0 * 1000);
-  bridge -= getTempComp(time);
+  he_voltage = RA1.getAverage() * (1.024 / 32768.0 * 1000);
+  he_voltage -= getTempComp();
 
   // Always display the new results
-  updateTopDisplay(voltage, bridge);
+  updateTopDisplay(o2_voltage, he_voltage);
 ;}
 
 // ---------- Air Calibration ----------
@@ -182,8 +183,8 @@ void calibrateO2() {
   }
 
   // Check if O2 cell is too weak
-  if (voltage < minVO2) {
-    showBottomMessage("O2 cell voltage", "is too weak.", "V cal = " + String(voltage, 2) + " mV");
+  if (o2_voltage < min_o2_calib) {
+    showBottomMessage("O2 cell o2_voltage", "is too weak.", "V cal = " + String(o2_voltage, 2) + " mV");
     delay(10000);
     showBottomMessage("");
     return;
@@ -196,10 +197,10 @@ void calibrateO2() {
     return;
   }
 
-  Vcalib = voltage; // store reference voltage for 20.9% O2
-  he_zero = bridge;
+  o2_calib = o2_voltage; // store reference o2_voltage for 20.9% O2
+  he_zero = he_voltage;
 
-  showBottomMessage("Calibration OK", "V cal = " + String(Vcalib, 2) + " mV", "He Zero = " + String(he_zero, 0) + " mV");
+  showBottomMessage("Calibration OK", "V cal = " + String(o2_calib, 2) + " mV", "He Zero = " + String(he_zero, 0) + " mV");
   delay(2000);
   showBottomMessage("");
 }
@@ -207,16 +208,16 @@ void calibrateO2() {
 // ---------- He Calibration ----------
 void saveHeCalib() {
   magicStore.write(MAGIC_VALUE);
-  hecorrStore.write(calibMD62_corr);
+  hecorrStore.write(he_calib_corr);
 }
 
 void loadHeCalib() {
   uint32_t magic = magicStore.read();
   if (magic == MAGIC_VALUE) {
-    calibMD62_corr = hecorrStore.read();
-    showBottomMessage("Loaded He calib", "Source: EEPROM", "mV@100%He = " + String(calibMD62_corr, 1));
+    he_calib_corr = hecorrStore.read();
+    showBottomMessage("Loaded He calib", "Source: EEPROM", "mV@100%He = " + String(he_calib_corr, 1));
   } else {
-    showBottomMessage("Loaded He calib", "Source: default", "mV@100%He = " + String(calibMD62_corr, 1));
+    showBottomMessage("Loaded He calib", "Source: default", "mV@100%He = " + String(he_calib_corr, 1));
   }
   delay(2000);
 }
@@ -232,22 +233,22 @@ void calibrateHe() {
     display.display();
   }
 
-  if (bridge < minVHe) {
-    showBottomMessage("Error with He", "calibration", "calibMD62 = " + String(bridge, 0) + " mV");
+  if (he_voltage < min_he_calib) {
+    showBottomMessage("Error with He", "calibration", "he_calib = " + String(he_voltage, 0) + " mV");
     delay(10000);
     return;
   }
-    if (voltage > max_vo2_for_he) {
-    showBottomMessage("Oxygen present", "not 100% He.", "V O2 = " + String(voltage, 2) + " mV");
+    if (o2_voltage > max_vo2_for_he) {
+    showBottomMessage("Oxygen present", "not 100% He.", "V O2 = " + String(o2_voltage, 2) + " mV");
     delay(10000);
     return;
   }
 
-  calibMD62 = bridge;  // Measured mV @ 100% He
-  calibMD62_corr = calibMD62 * (100 / 87.083);   // adjust so user enters real mV@100%He
+  he_calib = he_voltage;  // Measured mV @ 100% He
+  he_calib_corr = he_calib * (100 / 87.083);   // adjust so user enters real mV@100%He
   saveHeCalib(); // Save value in EEPROM.
 
-  showBottomMessage("He Calibration OK", "calibMD62 = " + String(bridge, 2) + " mV", "V O2 = "+ String(voltage, 2) + " mV");
+  showBottomMessage("He Calibration OK", "he_calib = " + String(he_voltage, 2) + " mV", "V O2 = "+ String(o2_voltage, 2) + " mV");
   delay(2000);
 }
 
@@ -271,9 +272,9 @@ void setup(void) {
   updateMeasurements();
 
   // wait until He sensor warms up
-  while (bridge > 10) {
+  while (he_voltage > 10) {
     updateMeasurements();
-    showBottomMessage("Preheating", "Helium sensor...", "V bridge= " + String(bridge, 0) + " mV");
+    showBottomMessage("Preheating", "Helium sensor...", "V he_voltage= " + String(he_voltage, 0) + " mV");
     delay(50);
   }
   delay(5000);
@@ -290,14 +291,13 @@ void setup(void) {
 // ---------- Main Loop ----------
 void loop() {
   // Read raw ADC values
-  time = millis();
   updateMeasurements();
 
   // --- O2 calculation ---
-  float nitrox = voltage * (20.9 / Vcalib);  // scale by calibration value
+  float nitrox = o2_voltage * (20.9 / o2_calib);  // scale by calibration value
 
   // --- He percentage calculation ---
-  float helium = 100 * (bridge-he_zero) / calibMD62_corr;        // linear %He estimate
+  float helium = 100 * (he_voltage-he_zero) / he_calib_corr;        // linear %He estimate
   if (helium > 50)
     helium = helium * (1 + (helium - 50) * 0.4 / 100);
   if (helium < 2) helium = 0;

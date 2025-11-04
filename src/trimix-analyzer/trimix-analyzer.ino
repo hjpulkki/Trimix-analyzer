@@ -3,13 +3,6 @@
 // Trimix Analyzer
 // Original: Yves Caze, Savoie Plongee
 // Mods: GoDive BRB (2021), Dominik Wiedmer (2021–2024), Heikki Pulkkinen (2025)
-// Version 1.1 4.10.2021
-// Version 1.2 7.10.2023 Change of library names, Calibration goal less strict
-// Version 20240601 Added calc for calibration offset, so that the value to be entered is =mV@100% He
-// added He 0 calib during O2 calib & Message if O2 < 7mV and no calibration
-// Version 20241017 remove blinking of display
-// Version 20251031 add option for 100% He calibration by long press, translate everything to Enlish etc.
-// Version 20251031b refactor display: always show O2mV & He mV at top
 
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
@@ -33,20 +26,21 @@ Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, 
 
 Adafruit_ADS1115 ads;
 
-// -------- Calibration & constants --------
-float o2_calib = 0;          // mV reading for 20.9% O2 (air)
+// -------- Public variables
 float o2_voltage = 0;         // O2 sensor voltage (mV)
 float he_voltage = 0;          // He sensor bridge voltage (mV)
-float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
-float max_vo2_for_he = 1;  // Maximum O2 sensor reading for 100% Helium (Mv)
-float min_he_calib = 200;        // Minimum valid He sensor voltage for 100% Helium
-float max_he_zero = 50;    // Maximum absolute value for the zero point of He sensor
-float he_zero = 0;         // Offset for He bridge
-unsigned long time;
 
-// Initial values which are used before first He calibration
+
+float o2_calib = 0;          // mV reading for 20.9% O2 (air)
+float he_zero = 0;         // Offset for He bridge
 float he_calib = 595.56;  // Measured mV @ 100% He (user-calibrated)
 float he_calib_corr = he_calib * (100 / 87.083);   // adjust so user enters real mV@100%He
+
+// Limits for calibration sanity checks
+float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
+float min_he_calib = 200;        // Minimum valid He sensor voltage for 100% Helium
+float max_he_zero = 50;    // Maximum absolute value for the zero point of He sensor
+float max_vo2_for_he = 1;  // Maximum O2 sensor reading for 100% Helium (Mv)
 
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
@@ -56,7 +50,7 @@ RunningAverage RA1(N_MEASUREMENTS);     // Moving average for He
 
 // ---------- Helper: Temperature Compensation ----------
 float getTempComp() {
-  t = millis()
+  unsigned long t = millis()
   if (t < 30000)  return 18;
   if (t < 40000)  return 17;
   if (t < 50000)  return 16;

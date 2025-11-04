@@ -1,3 +1,5 @@
+// License: CC BY-NC-SA 4.0
+// https://creativecommons.org/licenses/by-nc-sa/4.0/
 // Trimix Analyzer
 // Original: Yves Caze, Savoie Plongee
 // Mods: GoDive BRB (2021), Dominik Wiedmer (2021–2024), Heikki Pulkkinen (2025)

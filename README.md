@@ -1,4 +1,7 @@
 # DIY Trimix Analyser 
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC--BY--NC--SA%204.0-green)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+[![Hardware Project](https://img.shields.io/badge/Open%20Hardware-Yes-blue)]()
+> ⚠️ Non-commercial open hardware/software project: if you plan to build or sell analyzers commercially, contact the original authors for licensing.
 
 <img src="https://github.com/captainigloo/Trimix-analyzer/blob/master/images/trimix.jpg" height="300">
 
@@ -16,7 +19,7 @@ The mixture of helium and oxygen with a 0% nitrogen content is generally known a
 
 The method for evaluating the proportion (%) of Helium in the Trimix mixture is special. The MD62 sensor measures the proportion of all gases except nitrogen and oxygen. The AO2 sensor measures the proportion (%) of oxygen in the mixture. Ignoring the rare gases, we can deduce that on **[100% of Trimix] = [%He +%O2 +%N2]**
 
-Or  **[%N2] = [100% of Trimix] - [%He +%O2]**
+Or **[%N2] = [100% of Trimix] - [%He +%O2]**
 
 ## Genesis
 
@@ -39,5 +42,32 @@ Or  **[%N2] = [100% of Trimix] - [%He +%O2]**
 - [Flow reducer DIN 5/8](https://www.innodive.com/store/analyseurs-o2-et-he-48/reducteur-de-flux-921.html)
 - [LM2596 step down power module DC-DC converter(Board based LM2596)](https://www.amazon.com/s/ref=nb_sb_noss?url=search-alias%3Daps&field-keywords=LM2596) 
 
-## Licensing
-<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="Licence Creative Commons" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />Ce(tte) œuvre est mise à disposition selon les termes de la <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Licence Creative Commons Attribution - Pas d’Utilisation Commerciale - Partage dans les Mêmes Conditions 4.0 International</a>.
+## Credits / License
+
+This project is based on the original **DIY Trimix Analyzer** by  
+**Sébastien Joly (2018)**  
+https://github.com/captainigloo/Trimix-analyzer  
+
+Licensed under **CC BY-NC-SA 4.0**  
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+### Original Author
+- Sébastien Joly
+- Includes inspiration and prior concept reference from community sources
+
+### Contributors / Fork History
+- Yves Caze, Savoie Plongée — Original concept reference
+- GoDive BRB — Modifications (2021)
+- Dominik Wiedmer — Modifications (2021–2024), [3D printable case](https://www.printables.com/model/677331-trimix-analyser-v2?fbclid=IwY2xjawMk441leHRuA2FlbQIxMQABHid5aeiKY0CK5PrPJR7y1q0T8tPfb6r4xdhz_5JM70Wh1BE27sd93Ea1VcRq_aem_aEb72HYW_3OKoap3HzTuhw)
+- Heikki Pulkkinen — Further development (2025 →)
+
+### Version History
+- v1.1 (2021-10-04) — Community improvements
+- v1.2 (2023-10-07) — Library cleanup, calibration tolerance update
+- v20240601 — Add calibration offset calc, O₂ <7mV guard message
+- v20241017 — Remove display blinking
+- v20251031 — Option for 100% He calibration by long press, UI to English
+- v20251031b — Display refactor: always show O₂ mV & He mV at top
+
+All changes published under the terms of the
+**Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.**

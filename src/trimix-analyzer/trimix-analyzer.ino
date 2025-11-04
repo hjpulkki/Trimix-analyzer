@@ -32,12 +32,12 @@ float he_voltage = 0;         // He sensor bridge voltage (mV)
 
 float o2_calib = 0;           // mV reading for 20.9% O2 (air)
 float he_zero = 0;            // Offset for He bridge
-float he_calib = 595.56;      // Measured mV @ 100% He (user-calibrated)
-float he_calib_corr = he_calib * (100 / 87.083);   // adjust so user enters real mV@100%He
+float pure_he_mv = 551;       // Measured mV @ 100% He (user-calibrated)
+float he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@100%He
 
 // Limits for calibration sanity checks
 float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
-float min_he_calib = 200;        // Minimum valid He sensor voltage for 100% Helium
+float min_pure_he_mv = 200;       // Minimum valid He sensor voltage for 100% Helium
 float max_he_zero = 50;          // Maximum absolute value for the zero point of He sensor
 float max_vo2_for_he = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
 
@@ -73,11 +73,11 @@ void update_top_display() {
   // --- Always show O2mV and He mV on top of screen ---
   display.fillRect(0, 0, 128, 16, SH110X_BLACK);
   display.setTextSize(1);
-  display.setCursor(0, 0);
+  display.setCursor(10, 0);
   display.print("O2mV ");
   display.print(o2_voltage, 2);
-  display.setCursor(66, 0);
-  display.print("He mV ");
+  display.setCursor(71, 0);
+  display.print("HemV ");
   display.print(he_voltage, 0);
   display.display();
 }
@@ -166,22 +166,25 @@ void calibrate_air() {
 
   delay(900);
   for (int i = 0; i < N_MEASUREMENTS; i++) {
-    update_measurements(); delay(100);
-    display.print("."); display.display();
+    update_measurements();
+    display.setCursor(10 + 5*i, 40);
+    display.print(".");
+    display.display();
+    delay(100);
   }
 
   if (o2_voltage < min_o2_calib) {
     show_bottom_message("Error: O2 Cell Weak",
                         "Replace cell",
                         "Measured: " + String(o2_voltage,2) + " mV");
-    delay(4000);  return;
+    delay(10000);  return;
   }
 
   if (abs(he_zero) > max_he_zero) {
     show_bottom_message("Error: He Zero Offset",
                         "Adjust He Zero Screw",
                         "He Zero = " + String(he_zero,0) + " mV");
-    delay(4000);
+    delay(10000);
     return;
   }
 
@@ -194,20 +197,20 @@ void calibrate_air() {
   delay(2000);
 }
 
-void save_he_calib() {
+void save_he_span() {
   magicStore.write(MAGIC_VALUE);
-  hecorrStore.write(he_calib_corr);
+  hecorrStore.write(he_span);
 }
 
-void load_he_calib() {
+void load_he_span() {
   // Stores the helium calibration in flash memory; only needed occasionally.
   uint32_t magic = magicStore.read();
   if (magic == MAGIC_VALUE) {
-    show_bottom_message("Loaded He Calib", "Source: EEPROM",
-                        "mV@100%He=" + String(he_calib_corr,1));
+    show_bottom_message("Loaded He Span", "Source: EEPROM",
+                        "He Span=" + String(he_span,0));
   } else {
-    show_bottom_message("Loaded He Calib", "Source: Default",
-                        "mV@100%He=" + String(he_calib_corr,1));
+    show_bottom_message("Loaded He Span", "Source: Default",
+                        "He Span=" + String(he_span,0));
   }
   delay(2000);
 }
@@ -219,16 +222,17 @@ void calibrate_he() {
 
   for (int i = 0; i < N_MEASUREMENTS; i++) {
     update_measurements();
-    delay(100);
+    display.setCursor(10 + 5*i, 40);
     display.print(".");
     display.display();
+    delay(100);
   }
 
-  if (he_voltage < min_he_calib) {
+  if (he_voltage - he_zero < min_pure_he_mv) {
     show_bottom_message("Error: He Too Low",
                         "Check gas",
                         "He mV = " + String(he_voltage,0));
-    delay(4000);
+    delay(10000);
     return;
   }
 
@@ -236,13 +240,13 @@ void calibrate_he() {
     show_bottom_message("Error: O2 Present",
                         "Not 100% He",
                         "O2 mV = " + String(o2_voltage,2));
-    delay(4000);
+    delay(10000);
     return;
   }
 
-  he_calib = he_voltage;  // Measured mV @ 100% He
-  he_calib_corr = he_calib * (100 / 87.083);   // adjust so user enters real mV@100%He
-  save_he_calib(); // Save value in EEPROM.
+  pure_he_mv = he_voltage - he_zero;  // Measured mV @ 100% He
+  he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@100%He
+  save_he_span(); // Save value in EEPROM.
 
   show_bottom_message("He Calibration OK",
                       "He mV = " + String(he_voltage,2),
@@ -261,9 +265,16 @@ void setup(void) {
   display.clearDisplay();
 
   delay(1000);
-  display.setTextSize(1);
+
+  display.setTextSize(2);
   display.setTextColor(SH110X_WHITE, SH110X_BLACK);
-  show_bottom_message("Kaasuvelho", "v0.9 beta");
+  display.setCursor(5, 20);
+  display.setTextSize(2);
+  display.print("Kaasuvelho");
+  display.setCursor(10, 40);
+  display.setTextSize(1);
+  display.print("Heikki Pulkkinen");
+  display.display();
   delay(4000);
 
   ads.begin();
@@ -283,7 +294,7 @@ void setup(void) {
   */
 
   calibrate_air();
-  load_he_calib();
+  load_he_span();
 }
 
 // ---------- Main Loop ----------
@@ -295,7 +306,7 @@ void loop() {
   float nitrox = o2_voltage * (20.9 / o2_calib);  // scale by calibration value
 
   // --- He percentage calculation ---
-  float helium = 100 * (he_voltage-he_zero) / he_calib_corr;        // linear %He estimate
+  float helium = 100 * (he_voltage-he_zero) / he_span;        // linear %He estimate
   if (helium > 50)
     helium = helium * (1 + (helium - 50) * 0.4 / 100);
   if (helium < 2) helium = 0;
@@ -307,13 +318,13 @@ void loop() {
   if (helium > 0) {
     display.print("Trimix ");
     display.setCursor(10, 45);
-    display.print(nitrox, 0);
+    display.print(nitrox, 1);
     display.print(" / ");
     display.print(helium, 0);
   } else {
     display.print("Nitrox ");
     display.setCursor(10, 45);
-    display.print(nitrox, 0);
+    display.print(nitrox, 1);
   }
   display.display();
 

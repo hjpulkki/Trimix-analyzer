@@ -160,11 +160,7 @@ void update_measurements() {
   update_top_display();
 }
 
-void calibrate_air() {
-  // Performs O2 calibration and zero-offset calibration for the He sensor.
-  show_bottom_message("Calibrating O2", "Ref: Air 20.9%");
-
-  delay(900);
+void run_calibration() {
   for (int i = 0; i < N_MEASUREMENTS; i++) {
     update_measurements();
     display.setCursor(10 + 5*i, 40);
@@ -172,6 +168,13 @@ void calibrate_air() {
     display.display();
     delay(100);
   }
+}
+
+void calibrate_air() {
+  // Performs O2 calibration and zero-offset calibration for the He sensor.
+  show_bottom_message("Calibrating O2", "Ref: Air 20.9%");
+  delay(900);
+  run_calibration();
 
   if (o2_voltage < min_o2_calib) {
     show_bottom_message("Error: O2 Cell Weak",
@@ -219,14 +222,7 @@ void calibrate_he() {
   // Calibrates the He sensor span using 100% helium as the reference.
   show_bottom_message("Calibrating He", "Ref: 100% He");
   delay(900);
-
-  for (int i = 0; i < N_MEASUREMENTS; i++) {
-    update_measurements();
-    display.setCursor(10 + 5*i, 40);
-    display.print(".");
-    display.display();
-    delay(100);
-  }
+  run_calibration();
 
   if (he_voltage - he_zero < min_pure_he_mv) {
     show_bottom_message("Error: He Too Low",

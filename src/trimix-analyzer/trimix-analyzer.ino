@@ -30,16 +30,23 @@ Adafruit_ADS1115 ads;
 float o2_voltage = 0;         // O2 sensor voltage (mV)
 float he_voltage = 0;         // He sensor bridge voltage (mV)
 
-float o2_calib = 0;           // mV reading for 20.9% O2 (air)
+// Assume quadratic equation. o2 = a*V + b*V*V
+float o2_calib_21 = 0;
+float o2_calib_a = 0;
+float o2_calib_b = 0;
 float he_zero = 0;            // Offset for He bridge
 float pure_he_mv = 551;       // Measured mV @ 100% He (user-calibrated)
 float he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@100%He
 
 // Limits for calibration sanity checks
 float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
-float min_pure_he_mv = 200;       // Minimum valid He sensor voltage for 100% Helium
+float max_o2_calib = 12.00;      // Maximum valid O2 sensor voltage for air
+float min_pure_he_mv = 200;      // Minimum valid He sensor voltage for 100% Helium
 float max_he_zero = 50;          // Maximum absolute value for the zero point of He sensor
 float max_vo2_for_he = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
+
+const float MAX_CURVATURE_RATIO = 0.5f;   // |b| <= 0.5*a
+const float EPS = 1e-9f;                  // tiny number to avoid div-zero
 
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
@@ -117,7 +124,7 @@ void handle_button() {
       unsigned long press_duration = millis() - press_start_time;
       if (!long_press_triggered && press_duration >= LONG_PRESS_TIME) {
         long_press_triggered = true;
-        calibrate_he();  // Long press triggers He calibration
+        calibrate_oxygen();  // Temporary replaces the He calibration. TODO: Add calibration menu.
       }
     }
 
@@ -172,13 +179,20 @@ void run_calibration() {
 
 void calibrate_air() {
   // Performs O2 calibration and zero-offset calibration for the He sensor.
-  show_bottom_message("Calibrating O2", "Ref: Air 20.9%");
+  show_bottom_message("Calibrating Sensors", "Ref: Air 20.9%");
   delay(900);
   run_calibration();
 
   if (o2_voltage < min_o2_calib) {
     show_bottom_message("Error: O2 Cell Weak",
                         "Replace cell",
+                        "Measured: " + String(o2_voltage,2) + " mV");
+    delay(10000);  return;
+  }
+
+  if (o2_voltage > max_o2_calib) {
+    show_bottom_message("Too large O2 voltage",
+                        "Check gas",
                         "Measured: " + String(o2_voltage,2) + " mV");
     delay(10000);  return;
   }
@@ -191,13 +205,16 @@ void calibrate_air() {
     return;
   }
 
-  o2_calib = o2_voltage; // store reference o2_voltage for 20.9% O2
+  o2_calib_21 = o2_voltage; // store reference o2_voltage for 20.9% O2
+  o2_calib_a = (20.9 - o2_calib_b*o2_calib_21*o2_calib_21) / o2_calib_21;
+
   he_zero = he_voltage;
 
-  show_bottom_message("O2 Calibration OK",
-                      "O2 Ref = " + String(o2_calib,2) + " mV",
+  show_bottom_message("Air Calibration OK",
+                      "O2 Ref = " + String(o2_calib_21,2) + " mV",
                       "He Zero = " + String(he_zero,0) + " mV");
   delay(2000);
+  validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
 }
 
 void save_he_span() {
@@ -250,6 +267,83 @@ void calibrate_he() {
   delay(2000);
 }
 
+inline void set_linear_fallback() {
+    o2_calib_a = 20.9 / o2_calib_21;
+    o2_calib_b = 0.0f;
+}
+
+// Compensate for nonlinearity with 100% oxygen
+void calibrate_oxygen()
+{
+  show_bottom_message("Calibrating oxygen", "Ref: Oxygen 100.0%");
+  delay(900);
+  run_calibration(); // updates o2_voltage
+
+  float V21  = o2_calib_21;
+  float V100 = o2_voltage;
+  float denom = V21 * V100 * (V100 - V21);
+
+  if (fabs(denom) < EPS) {
+      set_linear_fallback();
+      show_bottom_message(
+          "O2 Calib Error",
+          "Check gas",
+          "Using linear"
+      );
+      delay(10000);
+      return;
+  }
+
+  o2_calib_b = (100.0 * V21 - 20.9 * V100) / denom;
+  o2_calib_a = (20.9 - o2_calib_b * V21 * V21) / V21;
+  validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
+
+  // TODO: Save o2_calib_b in flash memory.
+}
+
+void validate_nonlinear_calibration(float a, float b){
+  if (b < 0) {
+      set_linear_fallback();
+      show_bottom_message(
+          "O2 Calib Rejected",
+          "b = " + String(b, 4) + " < 0",
+          "Using linear"
+      );
+      delay(10000);
+      return;
+  }
+
+  if (a <= 0 || a > (20.9 / min_o2_calib)) {
+      set_linear_fallback();
+      show_bottom_message(
+          "O2 Sensor Weak",
+          "a = " + String(a, 1),
+          "Using linear"
+      );
+      delay(10000);
+      return;
+  }
+
+  if (fabs(b) > MAX_CURVATURE_RATIO * a) {
+      set_linear_fallback();
+      show_bottom_message(
+          "Error: param ratio",
+          "a = " + String(a, 1),
+          "b = " + String(b, 4)
+      );
+      delay(10000);
+      return;
+  }
+
+  show_bottom_message(
+      "O2 = a*V + b*V^2",
+      "a = " + String(a, 1),
+      "b = " + String(b, 4)
+  );
+  delay(2000);
+}
+
+
 // ---------- Setup ----------
 void setup(void) {
   Serial.begin(9600);
@@ -299,7 +393,7 @@ void loop() {
   update_measurements();
 
   // --- O2 calculation ---
-  float nitrox = o2_voltage * (20.9 / o2_calib);  // scale by calibration value
+  float nitrox = o2_calib_a*o2_voltage + o2_calib_b*o2_voltage*o2_voltage;  // scale by calibration value
 
   // --- He percentage calculation ---
   float helium = 100 * (he_voltage-he_zero) / he_span;        // linear %He estimate

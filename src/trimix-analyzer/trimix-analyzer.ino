@@ -18,8 +18,8 @@
 #define i2c_Address 0x3c
 #define SH110X_NO_SPLASH
 #define MAGIC_VALUE    0xBEEFCAFE
-#define BUTTON_PIN 1  // Calibration button
-#define LONG_PRESS_TIME 2000  // 2 seconds
+#define CALIBRATION_BUTTON_PIN 1
+#define LONG_PRESS_TIME 2000
 #define N_MEASUREMENTS 20
 
 Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
@@ -47,8 +47,7 @@ FlashStorage(hecorrStore, float);
 RunningAverage ra_o2(N_MEASUREMENTS);     // Moving average for O2
 RunningAverage ra_he(N_MEASUREMENTS);     // Moving average for He
 
-// ---------- Helper: Temperature Compensation ----------
-float get_temp_comp() {
+float get_temperature_compensation() {
   unsigned long t = millis();
   if (t < 30000)  return 18;
   if (t < 40000)  return 17;
@@ -70,7 +69,6 @@ float get_temp_comp() {
   return 0;
 }
 
-// ---------- Display Handling ----------
 void update_top_display() {
   // --- Always show O2mV and He mV on top of screen ---
   display.fillRect(0, 0, 128, 16, SH110X_BLACK);
@@ -95,15 +93,14 @@ void show_bottom_message(const String &line1, const String &line2 = "", const St
   display.setCursor(5, 50);
 }
 
-// ---------- Button Handling ----------
 void handle_button() {
   static bool button_pressed = false;
   static bool long_press_triggered = false;
   static unsigned long press_start_time = 0;
   static unsigned long last_debounce_time = 0;
-  const unsigned long debounce_delay = 50; // 50 ms debounce
+  const unsigned long debounce_delay = 50;
 
-  int reading = digitalRead(BUTTON_PIN);
+  int reading = digitalRead(CALIBRATION_BUTTON_PIN);
 
   // Debounce: only accept changes after stable state
   if (millis() - last_debounce_time > debounce_delay) {
@@ -131,7 +128,7 @@ void handle_button() {
       last_debounce_time = millis();
 
       if (!long_press_triggered && press_duration < LONG_PRESS_TIME) {
-        calibrate_o2();  // Short press triggers O2 calibration
+        calibrate_air();  // Short press triggers air calibration
       }
     }
   }
@@ -139,6 +136,7 @@ void handle_button() {
 
 // ---------- Measurement Update ----------
 void update_measurements() {
+  // O2 and He channels use different gains to fit their voltage ranges and maximize accuracy.
   // --- Channel 0–1: 0–50 mV ---
   ads.setGain(GAIN_SIXTEEN);                 // ±0.256 V range
   int16_t adc0 = ads.readADC_Differential_0_1();
@@ -157,67 +155,67 @@ void update_measurements() {
 
   // Convert the raw measurement to mV based on GAIN_FOUR
   he_voltage = ra_he.getAverage() * (1.024 / 32768.0 * 1000);
-  he_voltage -= get_temp_comp();
+  he_voltage -= get_temperature_compensation();
 
-  // Always display the new results
   update_top_display();
 }
 
-// ---------- Air Calibration ----------
-void calibrate_o2() {
-  show_bottom_message("Calibration", "O2 Sensor", "(Air 20.9% O2)");
-  delay(1000);
+void calibrate_air() {
+  // Performs O2 calibration and zero-offset calibration for the He sensor.
+  show_bottom_message("Calibrating O2", "Ref: Air 20.9%");
 
+  delay(900);
   for (int i = 0; i < N_MEASUREMENTS; i++) {
-    update_measurements();
-    delay(100);
-    display.print(".");
-    display.display();
+    update_measurements(); delay(100);
+    display.print("."); display.display();
   }
 
-  // Check if O2 cell is too weak
   if (o2_voltage < min_o2_calib) {
-    show_bottom_message("O2 cell o2_voltage", "is too weak.", "V cal = " + String(o2_voltage, 2) + " mV");
-    delay(10000);
-    show_bottom_message("");
-    return;
+    show_bottom_message("Error: O2 Cell Weak",
+                        "Replace cell",
+                        "Measured: " + String(o2_voltage,2) + " mV");
+    delay(4000);  return;
   }
 
   if (abs(he_zero) > max_he_zero) {
-    show_bottom_message("He zero error", "Adjust calib screw", "He Zero = " + String(he_zero, 2) + " mV");
-    delay(10000);
-    show_bottom_message("");
+    show_bottom_message("Error: He Zero Offset",
+                        "Adjust He Zero Screw",
+                        "He Zero = " + String(he_zero,0) + " mV");
+    delay(4000);
     return;
   }
 
   o2_calib = o2_voltage; // store reference o2_voltage for 20.9% O2
   he_zero = he_voltage;
 
-  show_bottom_message("Calibration OK", "V cal = " + String(o2_calib, 2) + " mV", "He Zero = " + String(he_zero, 0) + " mV");
+  show_bottom_message("O2 Calibration OK",
+                      "O2 Ref = " + String(o2_calib,2) + " mV",
+                      "He Zero = " + String(he_zero,0) + " mV");
   delay(2000);
-  show_bottom_message("");
 }
 
-// ---------- He Calibration ----------
 void save_he_calib() {
   magicStore.write(MAGIC_VALUE);
   hecorrStore.write(he_calib_corr);
 }
 
 void load_he_calib() {
+  // Stores the helium calibration in flash memory; only needed occasionally.
   uint32_t magic = magicStore.read();
   if (magic == MAGIC_VALUE) {
-    he_calib_corr = hecorrStore.read();
-    show_bottom_message("Loaded He calib", "Source: EEPROM", "mV@100%He = " + String(he_calib_corr, 1));
+    show_bottom_message("Loaded He Calib", "Source: EEPROM",
+                        "mV@100%He=" + String(he_calib_corr,1));
   } else {
-    show_bottom_message("Loaded He calib", "Source: default", "mV@100%He = " + String(he_calib_corr, 1));
+    show_bottom_message("Loaded He Calib", "Source: Default",
+                        "mV@100%He=" + String(he_calib_corr,1));
   }
   delay(2000);
 }
 
 void calibrate_he() {
-  show_bottom_message("Calibration", "He Sensor", "(100% He)");
-  delay(1000);
+  // Calibrates the He sensor span using 100% helium as the reference.
+  show_bottom_message("Calibrating He", "Ref: 100% He");
+  delay(900);
 
   for (int i = 0; i < N_MEASUREMENTS; i++) {
     update_measurements();
@@ -227,13 +225,18 @@ void calibrate_he() {
   }
 
   if (he_voltage < min_he_calib) {
-    show_bottom_message("Error with He", "calibration", "he_calib = " + String(he_voltage, 0) + " mV");
-    delay(10000);
+    show_bottom_message("Error: He Too Low",
+                        "Check gas",
+                        "He mV = " + String(he_voltage,0));
+    delay(4000);
     return;
   }
+
   if (o2_voltage > max_vo2_for_he) {
-    show_bottom_message("Oxygen present", "not 100% He.", "V O2 = " + String(o2_voltage, 2) + " mV");
-    delay(10000);
+    show_bottom_message("Error: O2 Present",
+                        "Not 100% He",
+                        "O2 mV = " + String(o2_voltage,2));
+    delay(4000);
     return;
   }
 
@@ -241,7 +244,9 @@ void calibrate_he() {
   he_calib_corr = he_calib * (100 / 87.083);   // adjust so user enters real mV@100%He
   save_he_calib(); // Save value in EEPROM.
 
-  show_bottom_message("He Calibration OK", "he_calib = " + String(he_voltage, 2) + " mV", "V O2 = "+ String(o2_voltage, 2) + " mV");
+  show_bottom_message("He Calibration OK",
+                      "He mV = " + String(he_voltage,2),
+                      "O2 mV = " + String(o2_voltage,2));
   delay(2000);
 }
 
@@ -250,7 +255,7 @@ void setup(void) {
   Serial.begin(9600);
   Wire.begin();
   Wire.setClock(400000L);
-  pinMode(1, INPUT_PULLUP); // Button for manual calibration
+  pinMode(CALIBRATION_BUTTON_PIN, INPUT_PULLUP); // Button for manual calibration
 
   display.begin(i2c_Address, true);
   display.clearDisplay();
@@ -262,23 +267,23 @@ void setup(void) {
   delay(4000);
 
   ads.begin();
-  update_measurements();
 
-  // wait until He sensor warms up
+  /*
+  Preheating should not be necessary with the temperature calibration.
   while (he_voltage > 10) {
     update_measurements();
-    show_bottom_message("Preheating", "Helium sensor...", "V he_voltage= " + String(he_voltage, 0) + " mV");
+    show_bottom_message("Preheating He Sensor",
+                        "Please wait",
+                        "He mV=" + String(he_voltage,0));
     delay(50);
   }
   delay(5000);
-  show_bottom_message("Helium sensor ready");
+  show_bottom_message("He Sensor Ready");
   delay(1000);
+  */
 
-  calibrate_o2(); // run O2 calibration on startup
+  calibrate_air();
   load_he_calib();
-
-  show_bottom_message("Analyzer ready");
-  delay(1000);
 }
 
 // ---------- Main Loop ----------

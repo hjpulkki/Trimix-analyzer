@@ -28,29 +28,28 @@ Adafruit_ADS1115 ads;
 
 // -------- Public variables
 float o2_voltage = 0;         // O2 sensor voltage (mV)
-float he_voltage = 0;          // He sensor bridge voltage (mV)
+float he_voltage = 0;         // He sensor bridge voltage (mV)
 
-
-float o2_calib = 0;          // mV reading for 20.9% O2 (air)
-float he_zero = 0;         // Offset for He bridge
-float he_calib = 595.56;  // Measured mV @ 100% He (user-calibrated)
+float o2_calib = 0;           // mV reading for 20.9% O2 (air)
+float he_zero = 0;            // Offset for He bridge
+float he_calib = 595.56;      // Measured mV @ 100% He (user-calibrated)
 float he_calib_corr = he_calib * (100 / 87.083);   // adjust so user enters real mV@100%He
 
 // Limits for calibration sanity checks
 float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
 float min_he_calib = 200;        // Minimum valid He sensor voltage for 100% Helium
-float max_he_zero = 50;    // Maximum absolute value for the zero point of He sensor
-float max_vo2_for_he = 1;  // Maximum O2 sensor reading for 100% Helium (Mv)
+float max_he_zero = 50;          // Maximum absolute value for the zero point of He sensor
+float max_vo2_for_he = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
 
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
 
-RunningAverage RA0(N_MEASUREMENTS);     // Moving average for O2
-RunningAverage RA1(N_MEASUREMENTS);     // Moving average for He
+RunningAverage ra_o2(N_MEASUREMENTS);     // Moving average for O2
+RunningAverage ra_he(N_MEASUREMENTS);     // Moving average for He
 
 // ---------- Helper: Temperature Compensation ----------
-float getTempComp() {
-  unsigned long t = millis()
+float get_temp_comp() {
+  unsigned long t = millis();
   if (t < 30000)  return 18;
   if (t < 40000)  return 17;
   if (t < 50000)  return 16;
@@ -72,20 +71,20 @@ float getTempComp() {
 }
 
 // ---------- Display Handling ----------
-void updateTopDisplay(float o2mv, float hemv) {
+void update_top_display() {
   // --- Always show O2mV and He mV on top of screen ---
   display.fillRect(0, 0, 128, 16, SH110X_BLACK);
   display.setTextSize(1);
   display.setCursor(0, 0);
   display.print("O2mV ");
-  display.print(o2mv, 2);
+  display.print(o2_voltage, 2);
   display.setCursor(66, 0);
   display.print("He mV ");
-  display.print(hemv, 0);
+  display.print(he_voltage, 0);
   display.display();
 }
 
-void showBottomMessage(const String &line1, const String &line2 = "", const String &line3 = "") {
+void show_bottom_message(const String &line1, const String &line2 = "", const String &line3 = "") {
   // --- Utility for bottom-area messages ---
   display.fillRect(0, 18, 128, 46, SH110X_BLACK);
   display.setTextSize(1);
@@ -97,56 +96,56 @@ void showBottomMessage(const String &line1, const String &line2 = "", const Stri
 }
 
 // ---------- Button Handling ----------
-void handleButton() {
-  static bool buttonPressed = false;
-  static bool longPressTriggered = false;
-  static unsigned long pressStartTime = 0;
-  static unsigned long lastDebounceTime = 0;
-  const unsigned long debounceDelay = 50; // 50 ms debounce
+void handle_button() {
+  static bool button_pressed = false;
+  static bool long_press_triggered = false;
+  static unsigned long press_start_time = 0;
+  static unsigned long last_debounce_time = 0;
+  const unsigned long debounce_delay = 50; // 50 ms debounce
 
   int reading = digitalRead(BUTTON_PIN);
 
   // Debounce: only accept changes after stable state
-  if (millis() - lastDebounceTime > debounceDelay) {
-    if (reading == LOW && !buttonPressed) {
+  if (millis() - last_debounce_time > debounce_delay) {
+    if (reading == LOW && !button_pressed) {
       // Button just pressed
-      buttonPressed = true;
-      longPressTriggered = false;
-      pressStartTime = millis();
-      lastDebounceTime = millis();
+      button_pressed = true;
+      long_press_triggered = false;
+      press_start_time = millis();
+      last_debounce_time = millis();
     }
 
-    if (buttonPressed && reading == LOW) {
+    if (button_pressed && reading == LOW) {
       // Button is being held
-      unsigned long pressDuration = millis() - pressStartTime;
-      if (!longPressTriggered && pressDuration >= LONG_PRESS_TIME) {
-        longPressTriggered = true;
-        calibrateHe();  // Long press triggers He calibration
+      unsigned long press_duration = millis() - press_start_time;
+      if (!long_press_triggered && press_duration >= LONG_PRESS_TIME) {
+        long_press_triggered = true;
+        calibrate_he();  // Long press triggers He calibration
       }
     }
 
-    if (buttonPressed && reading == HIGH) {
+    if (button_pressed && reading == HIGH) {
       // Button released
-      unsigned long pressDuration = millis() - pressStartTime;
-      buttonPressed = false;
-      lastDebounceTime = millis();
+      unsigned long press_duration = millis() - press_start_time;
+      button_pressed = false;
+      last_debounce_time = millis();
 
-      if (!longPressTriggered && pressDuration < LONG_PRESS_TIME) {
-        calibrateO2();  // Short press triggers O2 calibration
+      if (!long_press_triggered && press_duration < LONG_PRESS_TIME) {
+        calibrate_o2();  // Short press triggers O2 calibration
       }
     }
   }
 }
 
 // ---------- Measurement Update ----------
-void updateMeasurements() {
+void update_measurements() {
   // --- Channel 0–1: 0–50 mV ---
   ads.setGain(GAIN_SIXTEEN);                 // ±0.256 V range
   int16_t adc0 = ads.readADC_Differential_0_1();
-  RA0.addValue(adc0);
+  ra_o2.addValue(adc0);
 
   // Convert the raw measurement to mV based on GAIN_SIXTEEN
-  o2_voltage = RA0.getAverage() * (0.256 / 32768.0 * 1000);
+  o2_voltage = ra_o2.getAverage() * (0.256 / 32768.0 * 1000);
 
   // Voltage is negative only if the sensor is plugged in the wrong way
   o2_voltage = abs(o2_voltage);
@@ -154,23 +153,23 @@ void updateMeasurements() {
   // --- Channel 2–3: 0–650 mV ---
   ads.setGain(GAIN_FOUR);                    // ±1.024 V range
   int16_t adc1 = ads.readADC_Differential_2_3();
-  RA1.addValue(adc1);
+  ra_he.addValue(adc1);
 
   // Convert the raw measurement to mV based on GAIN_FOUR
-  he_voltage = RA1.getAverage() * (1.024 / 32768.0 * 1000);
-  he_voltage -= getTempComp();
+  he_voltage = ra_he.getAverage() * (1.024 / 32768.0 * 1000);
+  he_voltage -= get_temp_comp();
 
   // Always display the new results
-  updateTopDisplay(o2_voltage, he_voltage);
-;}
+  update_top_display();
+}
 
 // ---------- Air Calibration ----------
-void calibrateO2() {
-  showBottomMessage("Calibration", "O2 Sensor", "(Air 20.9% O2)");
+void calibrate_o2() {
+  show_bottom_message("Calibration", "O2 Sensor", "(Air 20.9% O2)");
   delay(1000);
 
   for (int i = 0; i < N_MEASUREMENTS; i++) {
-    updateMeasurements();
+    update_measurements();
     delay(100);
     display.print(".");
     display.display();
@@ -178,71 +177,71 @@ void calibrateO2() {
 
   // Check if O2 cell is too weak
   if (o2_voltage < min_o2_calib) {
-    showBottomMessage("O2 cell o2_voltage", "is too weak.", "V cal = " + String(o2_voltage, 2) + " mV");
+    show_bottom_message("O2 cell o2_voltage", "is too weak.", "V cal = " + String(o2_voltage, 2) + " mV");
     delay(10000);
-    showBottomMessage("");
+    show_bottom_message("");
     return;
   }
 
   if (abs(he_zero) > max_he_zero) {
-    showBottomMessage("He zero error", "Adjust calib screw", "He Zero = " + String(he_zero, 2) + " mV");
+    show_bottom_message("He zero error", "Adjust calib screw", "He Zero = " + String(he_zero, 2) + " mV");
     delay(10000);
-    showBottomMessage("");
+    show_bottom_message("");
     return;
   }
 
   o2_calib = o2_voltage; // store reference o2_voltage for 20.9% O2
   he_zero = he_voltage;
 
-  showBottomMessage("Calibration OK", "V cal = " + String(o2_calib, 2) + " mV", "He Zero = " + String(he_zero, 0) + " mV");
+  show_bottom_message("Calibration OK", "V cal = " + String(o2_calib, 2) + " mV", "He Zero = " + String(he_zero, 0) + " mV");
   delay(2000);
-  showBottomMessage("");
+  show_bottom_message("");
 }
 
 // ---------- He Calibration ----------
-void saveHeCalib() {
+void save_he_calib() {
   magicStore.write(MAGIC_VALUE);
   hecorrStore.write(he_calib_corr);
 }
 
-void loadHeCalib() {
+void load_he_calib() {
   uint32_t magic = magicStore.read();
   if (magic == MAGIC_VALUE) {
     he_calib_corr = hecorrStore.read();
-    showBottomMessage("Loaded He calib", "Source: EEPROM", "mV@100%He = " + String(he_calib_corr, 1));
+    show_bottom_message("Loaded He calib", "Source: EEPROM", "mV@100%He = " + String(he_calib_corr, 1));
   } else {
-    showBottomMessage("Loaded He calib", "Source: default", "mV@100%He = " + String(he_calib_corr, 1));
+    show_bottom_message("Loaded He calib", "Source: default", "mV@100%He = " + String(he_calib_corr, 1));
   }
   delay(2000);
 }
 
-void calibrateHe() {
-  showBottomMessage("Calibration", "He Sensor", "(100% He)");
+void calibrate_he() {
+  show_bottom_message("Calibration", "He Sensor", "(100% He)");
   delay(1000);
 
   for (int i = 0; i < N_MEASUREMENTS; i++) {
-    updateMeasurements();
+    update_measurements();
     delay(100);
     display.print(".");
     display.display();
   }
 
   if (he_voltage < min_he_calib) {
-    showBottomMessage("Error with He", "calibration", "he_calib = " + String(he_voltage, 0) + " mV");
+    show_bottom_message("Error with He", "calibration", "he_calib = " + String(he_voltage, 0) + " mV");
     delay(10000);
     return;
   }
-    if (o2_voltage > max_vo2_for_he) {
-    showBottomMessage("Oxygen present", "not 100% He.", "V O2 = " + String(o2_voltage, 2) + " mV");
+  if (o2_voltage > max_vo2_for_he) {
+    show_bottom_message("Oxygen present", "not 100% He.", "V O2 = " + String(o2_voltage, 2) + " mV");
     delay(10000);
     return;
   }
 
   he_calib = he_voltage;  // Measured mV @ 100% He
   he_calib_corr = he_calib * (100 / 87.083);   // adjust so user enters real mV@100%He
-  saveHeCalib(); // Save value in EEPROM.
+  save_he_calib(); // Save value in EEPROM.
 
-  showBottomMessage("He Calibration OK", "he_calib = " + String(he_voltage, 2) + " mV", "V O2 = "+ String(o2_voltage, 2) + " mV");
+  show_bottom_message("He Calibration OK", "he_calib = " + String(he_voltage, 2) + " mV", "V O2 = "+ String(o2_voltage, 2) + " mV");
   delay(2000);
 }
 
@@ -259,33 +258,33 @@ void setup(void) {
   delay(1000);
   display.setTextSize(1);
   display.setTextColor(SH110X_WHITE, SH110X_BLACK);
-  showBottomMessage("Kaasuvelho", "v0.9 beta");
+  show_bottom_message("Kaasuvelho", "v0.9 beta");
   delay(4000);
 
   ads.begin();
-  updateMeasurements();
+  update_measurements();
 
   // wait until He sensor warms up
   while (he_voltage > 10) {
-    updateMeasurements();
-    showBottomMessage("Preheating", "Helium sensor...", "V he_voltage= " + String(he_voltage, 0) + " mV");
+    update_measurements();
+    show_bottom_message("Preheating", "Helium sensor...", "V he_voltage= " + String(he_voltage, 0) + " mV");
     delay(50);
   }
   delay(5000);
-  showBottomMessage("Helium sensor ready");
+  show_bottom_message("Helium sensor ready");
   delay(1000);
 
-  calibrateO2(); // run O2 calibration on startup
-  loadHeCalib();
+  calibrate_o2(); // run O2 calibration on startup
+  load_he_calib();
 
-  showBottomMessage("Analyzer ready");
+  show_bottom_message("Analyzer ready");
   delay(1000);
 }
 
 // ---------- Main Loop ----------
 void loop() {
   // Read raw ADC values
-  updateMeasurements();
+  update_measurements();
 
   // --- O2 calculation ---
   float nitrox = o2_voltage * (20.9 / o2_calib);  // scale by calibration value
@@ -314,6 +313,6 @@ void loop() {
   display.display();
 
   // Manual recalibration when button is pressed
-  handleButton();
+  handle_button();
   delay(100);
 }

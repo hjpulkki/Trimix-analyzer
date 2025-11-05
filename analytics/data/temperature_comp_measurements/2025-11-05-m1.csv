@@ -1,6 +1,6 @@
 # Measurement done indoors at around 22 degrees celcius
 # Low relative humidity
-seconds_since_start,raw_value
+time,he_mv
 4,61
 17,60
 23,59

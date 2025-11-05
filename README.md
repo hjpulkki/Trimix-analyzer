@@ -80,11 +80,11 @@ The Wing Inflator Adapter is in alternative of analysing directly from the tank.
 
 1. Solder all components onto the PCB.
 2. Connect the Seeeduino to a USB power source.
-3. Adjust the voltage regulator screw (the one near the PCB edge) until 3 V is measured across the outer pins of the helium sensor connector.
+3. Adjust the voltage regulator resistor R10 until 3 V is measured across the outer pins of the helium sensor connector.
 4. Flash the Seeeduino with the firmware from this repository.
 5. Connect the display and confirm the code runs correctly.
 6. Connect the sensors and calibration button.
-7. Adjust the helium zero trimmer (the one closer to the center of the PCB) until the He mV value reads close to 0 in air.
+7. Adjust the helium zero trimmer resistor R4 until the He mV value reads close to 0 in air.
 8. If necessary, re‑adjust the voltage regulator with all components connected.
 9. Allow the MD62 helium sensor to burn in for 24 hours when new.
 

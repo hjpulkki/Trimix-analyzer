@@ -38,7 +38,7 @@ float he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@
 // Limits for calibration sanity checks
 float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
 float min_pure_he_mv = 200;       // Minimum valid He sensor voltage for 100% Helium
-float max_he_zero = 50;          // Maximum absolute value for the zero point of He sensor
+float max_he_zero = 100;          // Maximum absolute value for the zero point of He sensor
 float max_vo2_for_he = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
 
 FlashStorage(magicStore, uint32_t);
@@ -177,21 +177,21 @@ void calibrate_air() {
   run_calibration();
 
   if (o2_voltage < min_o2_calib) {
-    show_bottom_message("Error: O2 Cell Weak",
-                        "Replace cell",
+    show_bottom_message("Error: Low O2 mV",
+                        "Replace O2 Cell",
                         "Measured: " + String(o2_voltage,2) + " mV");
     delay(10000);  return;
   }
 
+  o2_calib = o2_voltage; // store reference o2_voltage for 20.9% O2
+
   if (abs(he_voltage) > max_he_zero) {
-    show_bottom_message("Error: He Zero Offset",
-                        "Adjust He Zero Screw",
+    show_bottom_message("Error: He Zero",
+                        "Adjust R4",
                         "He Zero = " + String(he_zero,0) + " mV");
     delay(10000);
     return;
   }
-
-  o2_calib = o2_voltage; // store reference o2_voltage for 20.9% O2
   he_zero = he_voltage;
 
   show_bottom_message("O2 Calibration OK",

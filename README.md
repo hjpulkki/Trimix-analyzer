@@ -39,8 +39,8 @@ Updated list of materials based on lising in [Printables: Trimix Analyser V2](ht
 | Seeduino           | Seeeduino XIAO                    | [AliExpress](https://www.aliexpress.com/item/1005001728616918.html) | Ensure you don't order the XIAO Grove Shield                                        |
 | ADS1115            | 16-bit I2C ADC                    | [AliExpress](https://www.aliexpress.com/item/1005005973975124.html) | —                                                                                   |
 | Display            | 1.3’’ OLED 128×64                 | [AliExpress](https://www.aliexpress.com/item/32844104782.html)      | Verify correct size and 4‑pin version                                               |
-| Terminals          | 3×2P & 2×3P                       | [AliExpress](https://www.aliexpress.com/item/1005001711075410.html) | Wrong part! Pin spacing must be 2.5 mm (0.1"); some too large, may fit O₂ cell etc. |
-| Calibration Button | 12 mm, non‑LED                    | [AliExpress](https://www.aliexpress.com/item/1005002579155216.html) | 220 V version in stock                                                              |
+| Terminals          | 3×2P & 2×3P                       | [AliExpress](https://www.aliexpress.com/item/1005001711075410.html) | Wrong part! Pin spacing must be 2.5 mm (0.1")                                       |
+| Calibration Button | 12 mm, non‑LED, 220 V             | [AliExpress](https://www.aliexpress.com/item/1005002579155216.html) |                                                                                     |
 | R10 & R4           | 1 kΩ trim pots (2×)               | [AliExpress](https://www.aliexpress.com/item/32956113030.html)      | Needs two                                                                           |
 | C1                 | Ceramic Capacitor 100 nF          | —                                                                   | —                                                                                   |
 | C2                 | Electrolytic Capacitor 1 µF       | —                                                                   | —                                                                                   |
@@ -60,8 +60,8 @@ You could use your analyzer with just an USB-C power source, but if you want to 
 | Battery Holder             | 1× 18650 holder      | [AliExpress](https://www.aliexpress.com/item/4000169485668.html)    | —                                            |
 | Battery Charging Board     | USB‑C Li‑ion charger | [AliExpress](https://www.aliexpress.com/item/1005002925698704.html) | —                                            |
 | ON/OFF Switch              | 2‑pin switch         | [AliExpress](https://www.aliexpress.com/item/4000896270246.html)    | —                                            |
-| DC‑DC Step‑Up Converter    | MT3608               | [AliExpress](https://www.aliexpress.com/item/4001066566291.html)    | Used for portable model (3.7 V Li‑ion → 5 V) |
-| 18650 Battery              | Li‑ion cell          | (supply your own)                                                   | —                                            |
+| DC‑DC Step‑Up Converter    | MT3608               | [AliExpress](https://www.aliexpress.com/item/4001066566291.html)    |                                              |
+| 18650 Battery              | Li‑ion cell          |                                                                     | —                                            |
 
 ### Wing Inflator Adapter Parts
 
@@ -69,8 +69,8 @@ The Wing Inflator Adapter is in alternative of analysing directly from the tank.
 
 | Label                 | Part Type     | Link                                                                | Notes                                              |
 | --------------------- | ------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
-| BCD Inflator Adapter  | 3/8‑24 UNF‑2A | [AliExpress](https://www.aliexpress.com/item/1005002320500288.html) | Not needed unless you want a wing inflator adapter |
-| Pneumatic Hose 8×5 mm | Hose (~40 cm) | [AliExpress](https://vi.aliexpress.com/item/1005004003104058.html)  | Only needed for wing adapter                       |
+| BCD Inflator Adapter  | 3/8‑24 UNF‑2A | [AliExpress](https://www.aliexpress.com/item/1005002320500288.html) |                                                    |
+| Pneumatic Hose 8×5 mm | Hose (~40 cm) | [AliExpress](https://vi.aliexpress.com/item/1005004003104058.html)  |                                                    |
 
 ### Build & Usage Instructions
 

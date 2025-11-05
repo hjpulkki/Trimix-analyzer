@@ -183,7 +183,7 @@ void calibrate_air() {
     delay(10000);  return;
   }
 
-  if (abs(he_zero) > max_he_zero) {
+  if (abs(he_voltage) > max_he_zero) {
     show_bottom_message("Error: He Zero Offset",
                         "Adjust He Zero Screw",
                         "He Zero = " + String(he_zero,0) + " mV");

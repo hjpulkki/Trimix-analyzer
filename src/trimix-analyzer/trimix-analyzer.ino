@@ -37,9 +37,14 @@ float he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@
 
 // Limits for calibration sanity checks
 float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
-float min_pure_he_mv = 200;       // Minimum valid He sensor voltage for 100% Helium
+float min_pure_he_mv = 200;      // Minimum valid He sensor voltage for 100% Helium
 float max_he_zero = 50;          // Maximum absolute value for the zero point of He sensor
 float max_vo2_for_he = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
+
+// ---- PREHEAT/ STABILITY SETTINGS ----
+const float CHANGE_THRESHOLD = 1;              // Allowed change in He value after preheating
+const float CHANGE_TIMESPAN  = 60;             // Duration in seconds over which the change above is allowed
+const unsigned long MAX_PREHEAT_TIME = 10UL * 60UL * 1000UL;  // 10 min timeout
 
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
@@ -48,24 +53,6 @@ RunningAverage ra_o2(N_MEASUREMENTS);     // Moving average for O2
 RunningAverage ra_he(N_MEASUREMENTS);     // Moving average for He
 
 float get_temperature_compensation() {
-  unsigned long t = millis();
-  if (t < 30000)  return 18;
-  if (t < 40000)  return 17;
-  if (t < 50000)  return 16;
-  if (t < 60000)  return 15;
-  if (t < 70000)  return 14;
-  if (t < 80000)  return 13;
-  if (t < 90000)  return 12;
-  if (t < 105000) return 11;
-  if (t < 120000) return 10;
-  if (t < 150000) return 9;
-  if (t < 165000) return 8;
-  if (t < 180000) return 7;
-  if (t < 210000) return 6;
-  if (t < 240000) return 5;
-  if (t < 270000) return 4;
-  if (t < 300000) return 3;
-  if (t < 360000) return 2;
   return 0;
 }
 
@@ -250,6 +237,31 @@ void calibrate_he() {
   delay(2000);
 }
 
+void preheat_helium_sensor() {
+  show_bottom_message("Preheat He Sensor");
+  unsigned long prevTime  = 0;
+  float prevHeVoltage = he_voltage;
+  unsigned long now = 0;
+
+  while (now < MAX_PREHEAT_TIME) {
+    run_calibration();
+    now = millis();
+    float dt_s = (now - prevTime) / 1000.0;
+    float ratio = (fabs(he_voltage - prevHeVoltage) / he_span) / dt_s * CHANGE_TIMESPAN * 100;
+    if (ratio < CHANGE_THRESHOLD) {
+      break;
+    }
+    show_bottom_message("Preheat He Sensor",
+                        "He % diff=" + String(ratio, 1));
+
+    prevHeVoltage = he_voltage;
+    prevTime = now;
+  }
+
+  show_bottom_message("He Sensor Ready");
+  delay(1000);
+}
+
 // ---------- Setup ----------
 void setup(void) {
   Serial.begin(9600);
@@ -269,28 +281,16 @@ void setup(void) {
   display.print("Kaasuvelho");
   display.setCursor(10, 40);
   display.setTextSize(1);
-  display.print("Heikki Pulkkinen");
+  display.print("Simplified version");
   display.display();
   delay(4000);
 
   ads.begin();
 
-  /*
-  Preheating should not be necessary with the temperature calibration.
-  while (he_voltage > 10) {
-    update_measurements();
-    show_bottom_message("Preheating He Sensor",
-                        "Please wait",
-                        "He mV=" + String(he_voltage,0));
-    delay(50);
-  }
-  delay(5000);
-  show_bottom_message("He Sensor Ready");
-  delay(1000);
-  */
+  load_he_span();
+  preheat_helium_sensor();
 
   calibrate_air();
-  load_he_span();
 }
 
 // ---------- Main Loop ----------

@@ -33,11 +33,11 @@ float he_voltage = 0;         // He sensor bridge voltage (mV)
 // Assume quadratic equation. o2 = a*V + b*V*V
 float o2_calib_21 = 0;
 float o2_calib_a = 0;
-float o2_calib_b = 0;
+float o2_calib_b = 0.001;
 float he_zero = 0;            // Offset for He bridge
 float pure_he_mv = 551;       // Measured mV @ 100% He (user-calibrated)
 float he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@100%He
-float o2_comp_k = 0.7;       // Compensate He measurements based on gas oxygen content
+float o2_comp_k = 6;          // Compensate He measurements based on gas oxygen content
 
 // Limits for calibration sanity checks
 float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
@@ -369,7 +369,7 @@ void calibrate_oxygen()
   validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
 
   // Update o2 compensation for he voltage
-  o2_comp_k = (he_voltage-he_zero)/(o2_voltage-o2_calib_21);
+  o2_comp_k = (he_voltage-he_zero)*o2_calib_21/(o2_voltage-o2_calib_21);
   show_bottom_message(
       "O2 compensation",
       "k = " + String(o2_comp_k, 4)
@@ -464,7 +464,7 @@ void loop() {
   float nitrox = o2_calib_a*o2_voltage + o2_calib_b*o2_voltage*o2_voltage;  // scale by calibration value
 
   // --- He percentage calculation ---
-  float o2_compensation = (o2_voltage-o2_calib_21)*o2_comp_k;               // Compensate for o2 levels
+  float o2_compensation = (o2_voltage-o2_calib_21)/o2_calib_21*o2_comp_k;   // Compensate for o2 levels
   float helium = 100 * (he_voltage-he_zero-o2_compensation) / he_span;      // linear %He estimate
   if (helium > 50)
     helium = helium * (1 + (helium - 50) * 0.4 / 100);

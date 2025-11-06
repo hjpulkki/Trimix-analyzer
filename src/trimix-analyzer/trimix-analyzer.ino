@@ -41,6 +41,7 @@ float o2_comp_k = 6;          // Compensate He measurements based on gas oxygen 
 
 // Limits for calibration sanity checks
 float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
+float max_o2_calib = 12.00;      // Maximum valid O2 sensor voltage for air
 float min_pure_he_mv = 200;       // Minimum valid He sensor voltage for 100% Helium
 float max_he_zero = 100;          // Maximum absolute value for the zero point of He sensor
 float max_vo2_for_he = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
@@ -315,7 +316,7 @@ void preheat_helium_sensor() {
   unsigned long prevTime  = 0;
   float prevHeVoltage = he_voltage;
   unsigned long now = 0;
-
+  delay(10000);  // Always preheat for 10 secods 
   while (now < MAX_PREHEAT_TIME) {
     run_calibration();
     now = millis();

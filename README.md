@@ -5,6 +5,10 @@
 
 This branch the code for advanced firmware. It will be 0-5 % more accurate than the simplified version, depending on the gasses and your sensors. If you use this version to analyze your diving gasses, you have to ask yourself if that improvement is worth it for the increased complexity. I would only recommend it if you want to play with these algorithms yourself.
 
+### Selecting advanced vs simplified firmware features
+
+The firmware now has a compile-time toggle in `src/trimix-analyzer/trimix-analyzer.ino`. Set `ADVANCED_FEATURES` to `1` (default) to enable the quadratic oxygen calibration, helium compensation and calibration menu from this branch. Set it to `0` to build the simplified/master behaviour (single-button calibration flow and linear O₂ mapping).
+
 <img src="https://github.com/captainigloo/Trimix-analyzer/blob/master/images/trimix.jpg" height="300">
 
 ## Définition of Trimix

@@ -19,6 +19,12 @@
 #define SH110X_NO_SPLASH
 #define MAGIC_VALUE    0xBEEFCAFE
 #define CALIBRATION_BUTTON_PIN 1
+
+// Toggle this flag to switch between the advanced and master branch features.
+// 1 = Advanced firmware (quadratic O2 calibration, compensation menu, etc.).
+// 0 = Simplified/master firmware.
+#define ADVANCED_FEATURES 1
+
 #define LONG_PRESS_TIME 1200
 #define N_MEASUREMENTS 20
 
@@ -26,36 +32,36 @@ Adafruit_SH1106G display = Adafruit_SH1106G(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, 
 
 Adafruit_ADS1115 ads;
 
-// -------- Public variables
+// -------- Public variables shared by both modes
 float o2_voltage = 0;         // O2 sensor voltage (mV)
 float he_voltage = 0;         // He sensor bridge voltage (mV)
 
-// Assume quadratic equation. o2 = a*V + b*V*V
+// Assume quadratic equation. o2 = a*V + b*V*V (b = 0 for linear mode)
 float o2_calib_21 = 0;
 float o2_calib_a = 0;
-float o2_calib_b = 0.001;
+float o2_calib_b = 0;
 float he_zero = 0;            // Offset for He bridge
 float pure_he_mv = 551;       // Measured mV @ 100% He (user-calibrated)
 float he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@100%He
-float o2_comp_k = 6;          // Compensate He measurements based on gas oxygen content
+float o2_comp_k = ADVANCED_FEATURES ? 6.0f : 0.0f;          // Compensate He measurements based on gas oxygen content
 
 // Limits for calibration sanity checks
-float min_o2_calib = 7.00;       // Minimum valid O2 sensor voltage for air
-float max_o2_calib = 12.00;      // Maximum valid O2 sensor voltage for air
-float min_pure_he_mv = 200;       // Minimum valid He sensor voltage for 100% Helium
-float max_he_zero = 100;          // Maximum absolute value for the zero point of He sensor
-float max_vo2_for_he = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
+const float MIN_O2_CALIB = 7.00;       // Minimum valid O2 sensor voltage for air
+const float MAX_O2_CALIB = 12.00;      // Maximum valid O2 sensor voltage for air
+const float MIN_PURE_HE_MV = 200;      // Minimum valid He sensor voltage for 100% Helium
+const float MAX_HE_ZERO = 50.0f;       // Maximum absolute value for the zero point of He sensor
+const float MAX_VO2_FOR_HE = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
 
 // ---- PREHEAT/ STABILITY SETTINGS ----
 const float CHANGE_THRESHOLD = 1;              // Allowed change in He value after preheating
 const float CHANGE_TIMESPAN  = 60;             // Duration in seconds over which the change above is allowed
 const unsigned long MAX_PREHEAT_TIME = 10UL * 60UL * 1000UL;  // 10 min timeout
 
-const float MAX_CURVATURE_RATIO = 0.5f;   // |b| <= 0.5*a
-const float EPS = 1e-9f;                  // tiny number to avoid div-zero
-
 enum CalibMenuState { MENU_OFF, MENU_ON };
 CalibMenuState calibMenu = MENU_OFF;
+#if ADVANCED_FEATURES
+const float MAX_CURVATURE_RATIO = 0.5f;   // |b| <= 0.5*a
+const float EPS = 1e-9f;                  // tiny number to avoid div-zero
 int calibIndex = 0; // 0=Air,1=He,2=O2
 unsigned long btnStart = 0;
 bool btnWasDown = false;
@@ -63,6 +69,7 @@ const unsigned long MENU_TIMEOUT = 8000;
 unsigned long menuTimer = 0;
 bool longPressTriggered = false;
 bool justCalibrated = false;
+#endif
 
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
@@ -98,26 +105,25 @@ void show_bottom_message(const String &line1, const String &line2 = "", const St
   display.setCursor(5, 50);
 }
 
+#if ADVANCED_FEATURES
 void drawCalibMenu() {
-  display.fillRect(0, 0, 128, 64, SH110X_BLACK);
+  display.fillRect(0, 16, 128, 48, SH110X_BLACK);
   display.setTextSize(1);
-  display.setCursor(10, 10);
+  display.setCursor(10, 20);
   display.print("Select calib gas");
   const char* items[3] = {"Air", "Helium", "Oxygen"};
   for (int i = 0; i < 3; i++) {
-    display.setCursor(10, 20 + i * 10);
+    display.setCursor(10, 30 + i * 10);
     if (i == calibIndex) display.print("> ");
     else display.print("  ");
     display.print(items[i]);
   }
-  display.setCursor(10, 50);
-  display.print("Hold = Select");
 
   display.display();
 }
 
 
-void handle_button() {
+void handle_calibration_button_with_menu() {
   int r = digitalRead(CALIBRATION_BUTTON_PIN);
   unsigned long t = millis();
 
@@ -156,7 +162,7 @@ void handle_button() {
       if (calibIndex==0) calibrate_air();
       if (calibIndex==1) calibrate_he();
       if (calibIndex==2) calibrate_oxygen();
-      
+
       justCalibrated = true;        // <-- prevent re-entering menu on release
       btnWasDown = false;
       longPressTriggered = true;
@@ -182,6 +188,48 @@ void handle_button() {
     display.clearDisplay();
   }
 }
+#else
+void handle_calibration_button_short_long() {
+  static bool button_pressed = false;
+  static bool long_press_triggered = false;
+  static unsigned long press_start_time = 0;
+  static unsigned long last_debounce_time = 0;
+  const unsigned long debounce_delay = 50;
+
+  int reading = digitalRead(CALIBRATION_BUTTON_PIN);
+
+  // Debounce: only accept changes after stable state
+  if (millis() - last_debounce_time > debounce_delay) {
+    if (reading == LOW && !button_pressed) {
+      // Button just pressed
+      button_pressed = true;
+      long_press_triggered = false;
+      press_start_time = millis();
+      last_debounce_time = millis();
+    }
+
+    if (button_pressed && reading == LOW) {
+      // Button is being held
+      unsigned long press_duration = millis() - press_start_time;
+      if (!long_press_triggered && press_duration >= LONG_PRESS_TIME) {
+        long_press_triggered = true;
+        calibrate_he();  // Long press triggers He calibration
+      }
+    }
+
+    if (button_pressed && reading == HIGH) {
+      // Button released
+      unsigned long press_duration = millis() - press_start_time;
+      button_pressed = false;
+      last_debounce_time = millis();
+
+      if (!long_press_triggered && press_duration < LONG_PRESS_TIME) {
+        calibrate_air();  // Short press triggers air calibration
+      }
+    }
+  }
+}
+#endif
 
 // ---------- Measurement Update ----------
 void update_measurements() {
@@ -206,9 +254,7 @@ void update_measurements() {
   he_voltage = ra_he.getAverage() * (1.024 / 32768.0 * 1000);
   he_voltage -= get_temperature_compensation();
 
-  if (calibMenu == MENU_OFF) {
-    update_top_display();
-  }
+  update_top_display();
 }
 
 void run_calibration() {
@@ -221,44 +267,74 @@ void run_calibration() {
   }
 }
 
+float compute_nitrox_percentage() {
+  return o2_calib_a * o2_voltage + o2_calib_b * o2_voltage * o2_voltage;
+}
+
+float compute_helium_percentage() {
+  float o2_compensation = 0;
+#if ADVANCED_FEATURES
+  if (o2_calib_21 != 0) {
+    o2_compensation = (o2_voltage - o2_calib_21) / o2_calib_21 * o2_comp_k;
+  }
+#endif
+
+  float helium = 100 * (he_voltage - he_zero - o2_compensation) / he_span;
+  if (helium > 50)
+    helium = helium * (1 + (helium - 50) * 0.4 / 100);
+  if (helium < 2) helium = 0;
+  return helium;
+}
+
+inline void apply_linear_calibration() {
+    o2_calib_a = 20.9 / o2_calib_21;
+    o2_calib_b = 0.0f;
+}
+
 void calibrate_air() {
   // Performs O2 calibration and zero-offset calibration for the He sensor.
   show_bottom_message("Calibrating Sensors", "Ref: Air 20.9%");
   delay(900);
   run_calibration();
 
-  if (o2_voltage < min_o2_calib) {
+  if (o2_voltage < MIN_O2_CALIB) {
     show_bottom_message("Error: Low O2 mV",
                         "Replace O2 Cell",
                         "Measured: " + String(o2_voltage,2) + " mV");
     delay(10000);  return;
   }
 
-  if (o2_voltage > max_o2_calib) {
+  if (o2_voltage > MAX_O2_CALIB) {
     show_bottom_message("Too large O2 voltage",
                         "Check gas",
                         "Measured: " + String(o2_voltage,2) + " mV");
     delay(10000);  return;
   }
 
-  o2_calib_21 = o2_voltage; // store reference o2_voltage for 20.9% O2
-  o2_calib_a = (20.9 - o2_calib_b*o2_calib_21*o2_calib_21) / o2_calib_21;
-
-  if (abs(he_voltage) > max_he_zero) {
+  if (abs(he_voltage) > MAX_HE_ZERO) {
     show_bottom_message("Error: He Zero",
                         "Adjust R4",
-                        "He Zero = " + String(he_zero,0) + " mV");
+                        "He Zero = " + String(he_voltage,0) + " mV");
     delay(10000);
     return;
   }
 
+  o2_calib_21 = o2_voltage; // store reference o2_voltage for 20.9% O2
   he_zero = he_voltage;
+
+#if ADVANCED_FEATURES
+  o2_calib_a = (20.9 - o2_calib_b*o2_calib_21*o2_calib_21) / o2_calib_21;
+#else
+  apply_linear_calibration();
+#endif
 
   show_bottom_message("Air Calibration OK",
                       "O2 Ref = " + String(o2_calib_21,2) + " mV",
                       "He Zero = " + String(he_zero,0) + " mV");
   delay(2000);
+#if ADVANCED_FEATURES
   validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
+#endif
 }
 
 void save_he_span() {
@@ -285,7 +361,7 @@ void calibrate_he() {
   delay(900);
   run_calibration();
 
-  if (he_voltage - he_zero < min_pure_he_mv) {
+  if (he_voltage - he_zero < MIN_PURE_HE_MV) {
     show_bottom_message("Error: He Too Low",
                         "Check gas",
                         "He mV = " + String(he_voltage,0));
@@ -293,7 +369,7 @@ void calibrate_he() {
     return;
   }
 
-  if (o2_voltage > max_vo2_for_he) {
+  if (o2_voltage > MAX_VO2_FOR_HE) {
     show_bottom_message("Error: O2 Present",
                         "Not 100% He",
                         "O2 mV = " + String(o2_voltage,2));
@@ -316,7 +392,7 @@ void preheat_helium_sensor() {
   unsigned long prevTime  = 0;
   float prevHeVoltage = he_voltage;
   unsigned long now = 0;
-  delay(10000);  // Always preheat for 10 secods 
+  delay(10000);  // Always preheat for 10 seconds
   while (now < MAX_PREHEAT_TIME) {
     run_calibration();
     now = millis();
@@ -336,11 +412,7 @@ void preheat_helium_sensor() {
   delay(1000);
 }
 
-inline void set_linear_fallback() {
-    o2_calib_a = 20.9 / o2_calib_21;
-    o2_calib_b = 0.0f;
-}
-
+#if ADVANCED_FEATURES
 // Compensate for nonlinearity with 100% oxygen
 void calibrate_oxygen()
 {
@@ -353,7 +425,7 @@ void calibrate_oxygen()
   float denom = V21 * V100 * (V100 - V21);
 
   if (fabs(denom) < EPS) {
-      set_linear_fallback();
+      apply_linear_calibration();
       show_bottom_message(
           "O2 Calib Error",
           "Check gas",
@@ -379,7 +451,7 @@ void calibrate_oxygen()
 
 void validate_nonlinear_calibration(float a, float b){
   if (b < 0) {
-      set_linear_fallback();
+      apply_linear_calibration();
       show_bottom_message(
           "O2 Calib Rejected",
           "b = " + String(b, 4) + " < 0",
@@ -389,8 +461,8 @@ void validate_nonlinear_calibration(float a, float b){
       return;
   }
 
-  if (a <= 0 || a > (20.9 / min_o2_calib)) {
-      set_linear_fallback();
+  if (a <= 0 || a > (20.9 / MIN_O2_CALIB)) {
+      apply_linear_calibration();
       show_bottom_message(
           "O2 Sensor Weak",
           "a = " + String(a, 1),
@@ -401,7 +473,7 @@ void validate_nonlinear_calibration(float a, float b){
   }
 
   if (fabs(b) > MAX_CURVATURE_RATIO * a) {
-      set_linear_fallback();
+      apply_linear_calibration();
       show_bottom_message(
           "Error: param ratio",
           "a = " + String(a, 1),
@@ -421,6 +493,7 @@ void validate_nonlinear_calibration(float a, float b){
   }
   delay(2000);
 }
+#endif
 
 
 // ---------- Setup ----------
@@ -442,7 +515,11 @@ void setup(void) {
   display.print("Kaasuvelho");
   display.setCursor(10, 40);
   display.setTextSize(1);
+#if ADVANCED_FEATURES
   display.print("Advanced version");
+#else
+  display.print("Simplified version");
+#endif
   display.display();
   delay(4000);
 
@@ -458,16 +535,8 @@ void setup(void) {
 void loop() {
   // Read raw ADC values
   update_measurements();
-
-  // --- O2 calculation ---
-  float nitrox = o2_calib_a*o2_voltage + o2_calib_b*o2_voltage*o2_voltage;  // scale by calibration value
-
-  // --- He percentage calculation ---
-  float o2_compensation = (o2_voltage-o2_calib_21)/o2_calib_21*o2_comp_k;   // Compensate for o2 levels
-  float helium = 100 * (he_voltage-he_zero-o2_compensation) / he_span;      // linear %He estimate
-  if (helium > 50)
-    helium = helium * (1 + (helium - 50) * 0.4 / 100);
-  if (helium < 2) helium = 0;
+  float nitrox = compute_nitrox_percentage();
+  float helium = compute_helium_percentage();
 
   // --- Bottom gas mix display ---
   if (calibMenu == MENU_OFF) {
@@ -489,6 +558,10 @@ void loop() {
   }
 
   // Manual recalibration when button is pressed
-  handle_button();
+#if ADVANCED_FEATURES
+  handle_calibration_button_with_menu();
+#else
+  handle_calibration_button_short_long();
+#endif
   delay(100);
 }

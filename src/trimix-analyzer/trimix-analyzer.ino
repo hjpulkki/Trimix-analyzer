@@ -77,9 +77,30 @@ FlashStorage(hecorrStore, float);
 RunningAverage ra_o2(N_MEASUREMENTS);     // Moving average for O2
 RunningAverage ra_he(N_MEASUREMENTS);     // Moving average for He
 
+#if ADVANCED_FEATURES
+// Logistic parameters from "Temperature compensation for He mV" notebook
+float L  = 0;
+float k  = -0.01239;
+float t0 = 0;
+
+// Call once at startup after preheating completes
+void init_compensation_offset() {
+  t0 = millis() * 0.001;  // Assume preheating finishes when second derivative goes to zero
+  float S = he_voltage + get_temperature_compensation();
+  if (S < 0.0001f) S = 0.0001f;
+  L = 2.0f * S;  // At inflection (t = t0), logistic = L/2
+}
+
+float get_temperature_compensation() {
+  float t = millis() * 0.001; // seconds
+  float e = exp(-k * (t - t0));
+  return L / (1 + e);
+}
+#else
 float get_temperature_compensation() {
   return 0;
 }
+#endif
 
 void update_top_display() {
   // --- Always show O2mV and He mV on top of screen ---
@@ -527,6 +548,9 @@ void setup(void) {
 
   load_he_span();
   preheat_helium_sensor();
+#if ADVANCED_FEATURES
+  init_compensation_offset();
+#endif
 
   calibrate_air();
 }

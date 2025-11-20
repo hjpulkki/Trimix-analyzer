@@ -3,6 +3,12 @@
 [![Hardware Project](https://img.shields.io/badge/Open%20Hardware-Yes-blue)]()
 > ⚠️ Non-commercial open hardware/software project: if you plan to build or sell analyzers commercially, contact the original authors for licensing.
 
+This branch the code for advanced firmware. It will be 0-5 % more accurate than the simplified version, depending on the gasses and your sensors. If you use this version to analyze your diving gasses, you have to ask yourself if that improvement is worth it for the increased complexity. I would only recommend it if you want to play with these algorithms yourself.
+
+### Selecting advanced vs simplified firmware features
+
+The firmware now has a compile-time toggle in `src/trimix-analyzer/trimix-analyzer.ino`. Set `ADVANCED_FEATURES` to `1` (default) to enable the quadratic oxygen calibration, helium compensation and calibration menu from this branch. Set it to `0` to build the simplified/master behaviour (single-button calibration flow and linear O₂ mapping).
+
 <img src="https://github.com/captainigloo/Trimix-analyzer/blob/master/images/trimix.jpg" height="300">
 
 ## Définition of Trimix
@@ -97,11 +103,10 @@ The Wing Inflator Adapter is in alternative of analysing directly from the tank.
 #### Calibration
 
 1. On boot, the device performs an air calibration: it calibrates the O₂ cell and sets the helium zero point.
-2. Short‑press the calibration button to re‑run air calibration. Do this if the O₂ reading has drifted, the sensor warmed further, or you want to calibrate with flowing gas instead of static gas.
-3. Long‑press the button to perform a pure‑helium calibration. Ensure helium is flowing and stable. Run this at least once — maximum MD62 span varies. The value is stored in flash and persists across power cycles.
-4. Periodically verify O₂ cell linearity with pure oxygen. Ensure air calibration first, then feed pure O₂. The reading should be over 40 mV and 95% O₂. Lower values suggest the cell is too old.
-5. Note: the simplified firmware does not compensate helium readings based on O₂ values, so expect 2–5% He reading in pure O₂.
-6. For advanced two‑point O₂ calibration and helium O₂‑compensation, see branch: [https://github.com/hjpulkki/Trimix-analyzer/tree/advanced-version](https://github.com/hjpulkki/Trimix-analyzer/tree/advanced-version)
+2. Run air calibration. Do this if the O₂ reading has drifted, the sensor warmed further, or you want to calibrate with flowing gas instead of static gas.
+3. Run He calibration. Before starting, ensure that the air calibration is done properly, helium is flowing and the readings are stable. Run this at least once — maximum MD62 span varies. The value is stored in flash and persists across power cycles.
+4. Run oxygen calibration. Before starting, ensure that the air calibration is done properly, oxygen is flowing and are the readings are stable. This fits a quadratic function to account for non-linearity for older cells. The analyzer will keep using the coefficient b even with after any subsequent calibrations with air.
+5. Oxygen calibration will also compensate helium readings based on O₂ values. After the calibration the sensor should read Nitrox 100%.
 
 ## Credits / License
 
@@ -129,6 +134,7 @@ https://creativecommons.org/licenses/by-nc-sa/4.0/
 - v20241017 — Remove display blinking
 - v20251031 — Option for 100% He calibration by long press, UI to English
 - v20251031b — Display refactor: always show O₂ mV & He mV at top
+- Advanced version — Quadratic o2 calibration and oxygen compensation
 
 All changes published under the terms of the
 **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.**

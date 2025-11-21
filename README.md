@@ -3,7 +3,7 @@
 [![Hardware Project](https://img.shields.io/badge/Open%20Hardware-Yes-blue)]()
 > ⚠️ Non-commercial open hardware/software project: if you plan to build or sell analyzers commercially, contact the original authors for licensing.
 
-This branch the code for advanced firmware. It will be 0-5 % more accurate than the simplified version, depending on the gasses and your sensors. If you use this version to analyze your diving gasses, you have to ask yourself if that improvement is worth it for the increased complexity. I would only recommend it if you want to play with these algorithms yourself.
+This repository now bundles both the advanced and simplified firmware in the same branch. The advanced build can be 0–5% more accurate than the simplified version, depending on the gases and your sensors. Before enabling the advanced features, consider whether the added calibration steps and complexity are worth the marginal gain; the advanced mode is best for experimenting with the algorithms yourself.
 
 ### Selecting advanced vs simplified firmware features
 

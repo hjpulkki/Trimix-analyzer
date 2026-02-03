@@ -73,6 +73,11 @@ bool justCalibrated = false;
 
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
+#if ADVANCED_FEATURES
+FlashStorage(o2MagicStore, uint32_t);
+FlashStorage(o2bStore, float);
+FlashStorage(o2CompStore, float);
+#endif
 
 RunningAverage ra_o2(N_MEASUREMENTS);     // Moving average for O2
 RunningAverage ra_he(N_MEASUREMENTS);     // Moving average for He
@@ -367,6 +372,7 @@ void load_he_span() {
   // Stores the helium calibration in flash memory; only needed occasionally.
   uint32_t magic = magicStore.read();
   if (magic == MAGIC_VALUE) {
+    he_span = hecorrStore.read();
     show_bottom_message("Loaded He Span", "Source: EEPROM",
                         "He Span=" + String(he_span,0));
   } else {
@@ -375,6 +381,28 @@ void load_he_span() {
   }
   delay(2000);
 }
+
+#if ADVANCED_FEATURES
+void save_o2_calibration() {
+  o2MagicStore.write(MAGIC_VALUE);
+  o2bStore.write(o2_calib_b);
+  o2CompStore.write(o2_comp_k);
+}
+
+void load_o2_calibration() {
+  uint32_t magic = o2MagicStore.read();
+  if (magic == MAGIC_VALUE) {
+    o2_calib_b = o2bStore.read();
+    o2_comp_k = o2CompStore.read();
+    show_bottom_message("Loaded O2 Calib", "Source: EEPROM",
+                        "b=" + String(o2_calib_b,4) + " k=" + String(o2_comp_k,4));
+  } else {
+    show_bottom_message("Loaded O2 Calib", "Source: Default",
+                        "b=" + String(o2_calib_b,4) + " k=" + String(o2_comp_k,4));
+  }
+  delay(2000);
+}
+#endif
 
 void calibrate_he() {
   // Calibrates the He sensor span using 100% helium as the reference.
@@ -458,7 +486,7 @@ void calibrate_oxygen()
 
   o2_calib_b = (100.0 * V21 - 20.9 * V100) / denom;
   o2_calib_a = (20.9 - o2_calib_b * V21 * V21) / V21;
-  validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
+  bool accepted = validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
 
   // Update o2 compensation for he voltage
   o2_comp_k = (he_voltage-he_zero)*o2_calib_21/(o2_voltage-o2_calib_21);
@@ -467,10 +495,13 @@ void calibrate_oxygen()
       "k = " + String(o2_comp_k, 4)
   );
   delay(2000);
-  // TODO: Save o2_calib_b and o2_comp_k in flash memory.
+
+  if (accepted) {
+    save_o2_calibration();
+  }
 }
 
-void validate_nonlinear_calibration(float a, float b){
+bool validate_nonlinear_calibration(float a, float b){
   if (b < 0) {
       apply_linear_calibration();
       show_bottom_message(
@@ -479,7 +510,7 @@ void validate_nonlinear_calibration(float a, float b){
           "Using linear"
       );
       delay(10000);
-      return;
+      return false;
   }
 
   if (a <= 0 || a > (20.9 / MIN_O2_CALIB)) {
@@ -490,7 +521,7 @@ void validate_nonlinear_calibration(float a, float b){
           "Using linear"
       );
       delay(10000);
-      return;
+      return false;
   }
 
   if (fabs(b) > MAX_CURVATURE_RATIO * a) {
@@ -501,7 +532,7 @@ void validate_nonlinear_calibration(float a, float b){
           "b = " + String(b, 4)
       );
       delay(10000);
-      return;
+      return false;
   }
 
   if (b != 0) {
@@ -513,6 +544,7 @@ void validate_nonlinear_calibration(float a, float b){
     );
   }
   delay(2000);
+  return true;
 }
 #endif
 
@@ -547,6 +579,9 @@ void setup(void) {
   ads.begin();
 
   load_he_span();
+#if ADVANCED_FEATURES
+  load_o2_calibration();
+#endif
   preheat_helium_sensor();
 #if ADVANCED_FEATURES
   init_compensation_offset();

@@ -42,7 +42,7 @@ Updated list of materials based on lising in [Printables: Trimix Analyser V2](ht
 | He Sensor          | MD62                              | [AliExpress](https://www.aliexpress.com/item/32725880118.html)      | Most expensive part                                                                 |
 | O₂ Sensor          | Original CITY AO2                 |                                                                     | Old cells from JJ CCR (or any other CCR probably)                                   |
 | U1                 | Voltage Regulator – LM316 / LM317 | [AliExpress](https://www.aliexpress.com/item/32364424866.html)      | LM317 in the kit works                                                              |
-| Seeduino           | Seeeduino XIAO                    | [AliExpress](https://www.aliexpress.com/item/1005001728616918.html) | Ensure you don't order the XIAO Grove Shield                                        |
+| Seeduino           | Seeeduino XIAO SAMD21             | [AliExpress](https://www.aliexpress.com/item/1005009296423418.html) |                                         |
 | ADS1115            | 16-bit I2C ADC                    | [AliExpress](https://www.aliexpress.com/item/1005005973975124.html) | —                                                                                   |
 | Display            | 1.3’’ OLED 128×64                 | [AliExpress](https://www.aliexpress.com/item/32844104782.html)      | Verify correct size and 4‑pin version                                               |
 | Terminals          | 3×2P & 2×3P                       | [AliExpress](https://www.aliexpress.com/item/1005001711075410.html) | Wrong part! Pin spacing must be 2.5 mm (0.1")                                       |

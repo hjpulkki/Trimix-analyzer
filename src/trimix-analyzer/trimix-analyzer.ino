@@ -52,13 +52,9 @@ const float MIN_PURE_HE_MV = 200;      // Minimum valid He sensor voltage for 10
 const float MAX_HE_ZERO = 50.0f;       // Maximum absolute value for the zero point of He sensor
 const float MAX_VO2_FOR_HE = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
 
-// ---- PREHEAT/ STABILITY SETTINGS ----
-const float CHANGE_THRESHOLD = 1;              // Allowed change in He value after preheating
-const float CHANGE_TIMESPAN  = 60;             // Duration in seconds over which the change above is allowed
-const unsigned long MAX_PREHEAT_TIME = 10UL * 60UL * 1000UL;  // 10 min timeout
-
 enum CalibMenuState { MENU_OFF, MENU_ON };
 CalibMenuState calibMenu = MENU_OFF;
+
 #if ADVANCED_FEATURES
 const float MAX_CURVATURE_RATIO = 0.5f;   // |b| <= 0.5*a
 const float EPS = 1e-9f;                  // tiny number to avoid div-zero
@@ -81,31 +77,6 @@ FlashStorage(o2CompStore, float);
 
 RunningAverage ra_o2(N_MEASUREMENTS);     // Moving average for O2
 RunningAverage ra_he(N_MEASUREMENTS);     // Moving average for He
-
-#if ADVANCED_FEATURES
-// Logistic parameters from "Temperature compensation for He mV" notebook
-float L  = 0;
-float k  = -0.01239;
-float t0 = 0;
-
-// Call once at startup after preheating completes
-void init_compensation_offset() {
-  t0 = millis() * 0.001;  // Assume preheating finishes when second derivative goes to zero
-  float S = he_voltage + get_temperature_compensation();
-  if (S < 0.0001f) S = 0.0001f;
-  L = 2.0f * S;  // At inflection (t = t0), logistic = L/2
-}
-
-float get_temperature_compensation() {
-  float t = millis() * 0.001; // seconds
-  float e = exp(-k * (t - t0));
-  return L / (1 + e);
-}
-#else
-float get_temperature_compensation() {
-  return 0;
-}
-#endif
 
 void update_top_display() {
   // --- Always show O2mV and He mV on top of screen ---
@@ -278,7 +249,6 @@ void update_measurements() {
 
   // Convert the raw measurement to mV based on GAIN_FOUR
   he_voltage = ra_he.getAverage() * (1.024 / 32768.0 * 1000);
-  he_voltage -= get_temperature_compensation();
 
   update_top_display();
 }
@@ -438,25 +408,7 @@ void calibrate_he() {
 
 void preheat_helium_sensor() {
   show_bottom_message("Preheat He Sensor");
-  unsigned long prevTime  = 0;
-  float prevHeVoltage = he_voltage;
-  unsigned long now = 0;
   delay(10000);  // Always preheat for 10 seconds
-  while (now < MAX_PREHEAT_TIME) {
-    run_calibration();
-    now = millis();
-    float dt_s = (now - prevTime) / 1000.0;
-    float ratio = (fabs(he_voltage - prevHeVoltage) / he_span) / dt_s * CHANGE_TIMESPAN * 100;
-    if (ratio < CHANGE_THRESHOLD) {
-      break;
-    }
-    show_bottom_message("Preheat He Sensor",
-                        "He % diff=" + String(ratio, 1));
-
-    prevHeVoltage = he_voltage;
-    prevTime = now;
-  }
-
   show_bottom_message("He Sensor Ready");
   delay(1000);
 }
@@ -568,25 +520,25 @@ void setup(void) {
   display.print("Kaasuvelho");
   display.setCursor(10, 40);
   display.setTextSize(1);
+
 #if ADVANCED_FEATURES
   display.print("Advanced version");
 #else
   display.print("Simplified version");
 #endif
+
   display.display();
   delay(4000);
 
   ads.begin();
 
   load_he_span();
+
 #if ADVANCED_FEATURES
   load_o2_calibration();
 #endif
-  preheat_helium_sensor();
-#if ADVANCED_FEATURES
-  init_compensation_offset();
-#endif
 
+  preheat_helium_sensor();
   calibrate_air();
 }
 

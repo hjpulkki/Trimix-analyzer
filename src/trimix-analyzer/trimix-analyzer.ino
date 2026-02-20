@@ -318,19 +318,18 @@ void calibrate_air() {
   o2_calib_21 = o2_voltage; // store reference o2_voltage for 20.9% O2
   he_zero = he_voltage;
 
-#if ADVANCED_FEATURES
-  o2_calib_a = (20.9 - o2_calib_b*o2_calib_21*o2_calib_21) / o2_calib_21;
-#else
-  apply_linear_calibration();
-#endif
-
   show_bottom_message("Air Calibration OK",
                       "O2 Ref = " + String(o2_calib_21,2) + " mV",
                       "He Zero = " + String(he_zero,0) + " mV");
   delay(2000);
+
 #if ADVANCED_FEATURES
+  o2_calib_a = (20.9 - o2_calib_b*o2_calib_21*o2_calib_21) / o2_calib_21;
   validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
+#else
+  apply_linear_calibration();
 #endif
+
 }
 
 void save_he_span() {
@@ -438,7 +437,7 @@ void calibrate_oxygen()
 
   o2_calib_b = (100.0 * V21 - 20.9 * V100) / denom;
   o2_calib_a = (20.9 - o2_calib_b * V21 * V21) / V21;
-  bool accepted = validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
+  validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
 
   // Update o2 compensation for he voltage
   o2_comp_k = (he_voltage-he_zero)*o2_calib_21/(o2_voltage-o2_calib_21);
@@ -448,9 +447,8 @@ void calibrate_oxygen()
   );
   delay(2000);
 
-  if (accepted) {
-    save_o2_calibration();
-  }
+  // Save calibration even if validation fails. In this case saves b=0.
+  save_o2_calibration();
 }
 
 bool validate_nonlinear_calibration(float a, float b){
@@ -462,7 +460,7 @@ bool validate_nonlinear_calibration(float a, float b){
           "Using linear"
       );
       delay(10000);
-      return false;
+      return;
   }
 
   if (a <= 0 || a > (20.9 / MIN_O2_CALIB)) {
@@ -473,7 +471,7 @@ bool validate_nonlinear_calibration(float a, float b){
           "Using linear"
       );
       delay(10000);
-      return false;
+      return;
   }
 
   if (fabs(b) > MAX_CURVATURE_RATIO * a) {
@@ -484,17 +482,14 @@ bool validate_nonlinear_calibration(float a, float b){
           "b = " + String(b, 4)
       );
       delay(10000);
-      return false;
+      return;
   }
 
-  if (b != 0) {
-    // Only display if actually nonlinear
-    show_bottom_message(
-        "O2 = a*V + b*V^2",
-        "a = " + String(a, 1),
-        "b = " + String(b, 4)
-    );
-  }
+  show_bottom_message(
+      "O2 = a*V + b*V^2",
+      "a = " + String(a, 1),
+      "b = " + String(b, 4)
+  );
   delay(2000);
   return true;
 }

@@ -67,6 +67,9 @@ bool longPressTriggered = false;
 bool justCalibrated = false;
 #endif
 
+bool sensor_warning = false;    // if raised, stays on until power cycle
+
+
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
 #if ADVANCED_FEATURES
@@ -102,6 +105,22 @@ void show_bottom_message(const String &line1, const String &line2 = "", const St
   display.setCursor(5, 50);
 }
 
+void draw_warning_icon(int x, int y) {
+  display.drawTriangle(
+      x, y + 10,
+      x + 10, y + 10,
+      x + 5, y,
+      SH110X_WHITE);
+
+  display.drawLine(x + 5, y + 3,
+                   x + 5, y + 7,
+                   SH110X_WHITE);
+
+  display.drawPixel(x + 5, y + 9,
+                    SH110X_WHITE);
+}
+
+void handle_button() {
 #if ADVANCED_FEATURES
 void drawCalibMenu() {
   display.fillRect(0, 16, 128, 48, SH110X_BLACK);
@@ -297,22 +316,24 @@ void calibrate_air() {
     show_bottom_message("Error: Low O2 mV",
                         "Replace O2 Cell",
                         "Measured: " + String(o2_voltage,2) + " mV");
-    delay(10000);  return;
+    delay(4000);
+    sensor_warning = true;
   }
 
   if (o2_voltage > MAX_O2_CALIB) {
     show_bottom_message("Too large O2 voltage",
                         "Check gas",
                         "Measured: " + String(o2_voltage,2) + " mV");
-    delay(10000);  return;
+    delay(4000);
+    sensor_warning = true;
   }
 
   if (abs(he_voltage) > MAX_HE_ZERO) {
     show_bottom_message("Error: He Zero",
                         "Adjust R4",
                         "He Zero = " + String(he_voltage,0) + " mV");
-    delay(10000);
-    return;
+    delay(4000);
+    sensor_warning = true;
   }
 
   o2_calib_21 = o2_voltage; // store reference o2_voltage for 20.9% O2
@@ -333,6 +354,9 @@ void calibrate_air() {
 }
 
 void save_he_span() {
+  if (sensor_warning)
+    return;
+
   magicStore.write(MAGIC_VALUE);
   hecorrStore.write(he_span);
 }
@@ -345,10 +369,10 @@ void load_he_span() {
     show_bottom_message("Loaded He Span", "Source: EEPROM",
                         "He Span=" + String(he_span,0));
   } else {
-    show_bottom_message("Loaded He Span", "Source: Default",
+    show_bottom_message("No saved He Span", "Source: Default",
                         "He Span=" + String(he_span,0));
   }
-  delay(2000);
+  delay(4000);
 }
 
 #if ADVANCED_FEATURES
@@ -383,26 +407,28 @@ void calibrate_he() {
     show_bottom_message("Error: He Too Low",
                         "Check gas",
                         "He mV = " + String(he_voltage,0));
-    delay(10000);
-    return;
+    delay(4000);
+    sensor_warning = true;
   }
 
   if (o2_voltage > MAX_VO2_FOR_HE) {
     show_bottom_message("Error: O2 Present",
                         "Not 100% He",
                         "O2 mV = " + String(o2_voltage,2));
-    delay(10000);
-    return;
+    delay(4000);
+    sensor_warning = true;
   }
+  pure_he_mv = he_voltage - he_zero;
+  he_span = pure_he_mv * (100 / 87.083);
 
-  pure_he_mv = he_voltage - he_zero;  // Measured mV @ 100% He
-  he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@100%He
-  save_he_span(); // Save value in EEPROM.
+  save_he_span();
 
-  show_bottom_message("He Calibration OK",
-                      "He mV = " + String(he_voltage,2),
-                      "O2 mV = " + String(o2_voltage,2));
-  delay(2000);
+  show_bottom_message(
+      sensor_warning ? "Calibration WARN" : "He Calibration OK",
+      "He mV = " + String(he_voltage,2),
+      "O2 mV = " + String(o2_voltage,2));
+
+  delay(4000);
 }
 
 void preheat_helium_sensor() {
@@ -562,6 +588,11 @@ void loop() {
     }
     display.display();
   }
+
+  if (sensor_warning)
+    draw_warning_icon(118, 25);
+
+  display.display();
 
   // Manual recalibration when button is pressed
 #if ADVANCED_FEATURES

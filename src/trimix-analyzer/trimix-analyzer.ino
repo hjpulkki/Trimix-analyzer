@@ -120,7 +120,6 @@ void draw_warning_icon(int x, int y) {
                     SH110X_WHITE);
 }
 
-void handle_button() {
 #if ADVANCED_FEATURES
 void drawCalibMenu() {
   display.fillRect(0, 16, 128, 48, SH110X_BLACK);
@@ -338,11 +337,11 @@ void calibrate_air() {
 
   o2_calib_21 = o2_voltage; // store reference o2_voltage for 20.9% O2
   he_zero = he_voltage;
-
-  show_bottom_message("Air Calibration OK",
-                      "O2 Ref = " + String(o2_calib_21,2) + " mV",
-                      "He Zero = " + String(he_zero,0) + " mV");
-  delay(2000);
+  show_bottom_message(
+      sensor_warning ? "Calibration WARN" : "Calibration OK",
+      "O2 Ref = " + String(o2_calib_21,2) + " mV",
+      "He Zero = " + String(he_zero,0) + " mV");
+  delay(4000);
 
 #if ADVANCED_FEATURES
   o2_calib_a = (20.9 - o2_calib_b*o2_calib_21*o2_calib_21) / o2_calib_21;
@@ -446,9 +445,7 @@ void calibrate_oxygen()
   delay(900);
   run_calibration(); // updates o2_voltage
 
-  float V21  = o2_calib_21;
-  float V100 = o2_voltage;
-  float denom = V21 * V100 * (V100 - V21);
+  float denom = o2_calib_21 * o2_voltage * (o2_voltage - o2_calib_21);
 
   if (fabs(denom) < EPS) {
       apply_linear_calibration();
@@ -461,8 +458,8 @@ void calibrate_oxygen()
       return;
   }
 
-  o2_calib_b = (100.0 * V21 - 20.9 * V100) / denom;
-  o2_calib_a = (20.9 - o2_calib_b * V21 * V21) / V21;
+  o2_calib_b = (100.0 * o2_calib_21 - 20.9 * o2_voltage) / denom;
+  o2_calib_a = (20.9 - o2_calib_b * o2_calib_21 * o2_calib_21) / o2_calib_21;
   validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
 
   // Update o2 compensation for he voltage
@@ -477,7 +474,7 @@ void calibrate_oxygen()
   save_o2_calibration();
 }
 
-bool validate_nonlinear_calibration(float a, float b){
+void validate_nonlinear_calibration(float a, float b){
   if (b < 0) {
       apply_linear_calibration();
       show_bottom_message(
@@ -517,7 +514,6 @@ bool validate_nonlinear_calibration(float a, float b){
       "b = " + String(b, 4)
   );
   delay(2000);
-  return true;
 }
 #endif
 
@@ -586,13 +582,10 @@ void loop() {
       display.setCursor(10, 45);
       display.print(nitrox, 1);
     }
+    if (sensor_warning)
+      draw_warning_icon(118, 25);
     display.display();
   }
-
-  if (sensor_warning)
-    draw_warning_icon(118, 25);
-
-  display.display();
 
   // Manual recalibration when button is pressed
 #if ADVANCED_FEATURES

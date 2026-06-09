@@ -21,8 +21,8 @@
 #define CALIBRATION_BUTTON_PIN 1
 
 // Toggle this flag to switch between the advanced and master branch features.
-// 1 = Advanced firmware (quadratic O2 calibration, compensation menu, etc.).
-// 0 = Simplified/master firmware.
+// 0 = Simplified firmware. Only linear calibration.
+// 1 = Advanced firmware (quadratic O2 calibration, o2 compensation for helium).
 #define ADVANCED_FEATURES 1
 
 #define LONG_PRESS_TIME 1200
@@ -55,16 +55,22 @@ const float MAX_VO2_FOR_HE = 1;        // Maximum O2 sensor reading for 100% Hel
 enum CalibMenuState { MENU_OFF, MENU_ON };
 CalibMenuState calibMenu = MENU_OFF;
 
+const char* calibItems[] = {
+  "Air",
+  "Helium",
+#if ADVANCED_FEATURES
+  "Oxygen",
+#endif
+};
+constexpr int CALIB_ITEMS = sizeof(calibItems) / sizeof(calibItems[0]);
+int calibIndex = 0; // 0=Air,1=He,2=O2
+const unsigned long MENU_TIMEOUT = 8000;
+bool justCalibrated = false;
+unsigned long menuTimer = 0;
+
 #if ADVANCED_FEATURES
 const float MAX_CURVATURE_RATIO = 0.5f;   // |b| <= 0.5*a
 const float EPS = 1e-9f;                  // tiny number to avoid div-zero
-int calibIndex = 0; // 0=Air,1=He,2=O2
-unsigned long btnStart = 0;
-bool btnWasDown = false;
-const unsigned long MENU_TIMEOUT = 8000;
-unsigned long menuTimer = 0;
-bool longPressTriggered = false;
-bool justCalibrated = false;
 #endif
 
 bool sensor_warning = false;    // if raised, stays on until power cycle
@@ -120,131 +126,91 @@ void draw_warning_icon(int x, int y) {
                     SH110X_WHITE);
 }
 
-#if ADVANCED_FEATURES
 void drawCalibMenu() {
   display.fillRect(0, 16, 128, 48, SH110X_BLACK);
   display.setTextSize(1);
   display.setCursor(10, 20);
   display.print("Select calib gas");
-  const char* items[3] = {"Air", "Helium", "Oxygen"};
-  for (int i = 0; i < 3; i++) {
+
+  for (int i = 0; i < CALIB_ITEMS; i++) {
     display.setCursor(10, 30 + i * 10);
-    if (i == calibIndex) display.print("> ");
-    else display.print("  ");
-    display.print(items[i]);
+    display.print(i == calibIndex ? "> " : "  ");
+    display.print(calibItems[i]);
   }
 
   display.display();
 }
 
+void handle_calibration_button() {
+  static bool btnDown = false;
+  static unsigned long t0 = 0;
+  static unsigned long lastDebounce = 0;
+  static bool longFired = false;
 
-void handle_calibration_button_with_menu() {
+  const unsigned long debounce = 40;
   int r = digitalRead(CALIBRATION_BUTTON_PIN);
   unsigned long t = millis();
 
-  static unsigned long lastRead = 0;
-  const unsigned long debounce = 40;
-  if (millis() - lastRead < debounce) return;
-  lastRead = millis();
+  if (t - lastDebounce < debounce) return;
+  lastDebounce = t;
 
-
-  // Enter menu if OFF
+  // ---- ENTER MENU ----
   if (calibMenu == MENU_OFF) {
-
-      // ignore the first release after calibration
-      if (justCalibrated) {
-        if (r == HIGH) return;     // wait until button is fully released
-        justCalibrated = false;
-      }
-
-      if (!btnWasDown && r == LOW) { btnWasDown=true; btnStart=t; }
-      if (btnWasDown && r == HIGH) {
-        btnWasDown=false; calibMenu=MENU_ON; calibIndex=0; menuTimer=t;
-        drawCalibMenu();
-      }
-      return;
-  }
-
-  // --- MENU MODE ---
-  if (!btnWasDown && r == LOW) { btnWasDown=true; btnStart=t; longPressTriggered=false; }
-
-  if (btnWasDown && r == LOW) {
-    // auto-trigger long press select
-    if (!longPressTriggered && (t - btnStart >= LONG_PRESS_TIME)) {
-      calibMenu = MENU_OFF;
-      display.clearDisplay();
-
-      if (calibIndex==0) calibrate_air();
-      if (calibIndex==1) calibrate_he();
-      if (calibIndex==2) calibrate_oxygen();
-
-      justCalibrated = true;        // <-- prevent re-entering menu on release
-      btnWasDown = false;
-      longPressTriggered = true;
+    if (!btnDown && r == LOW) {
+      btnDown = true;
+      t0 = t;
     }
-  }
 
-  if (btnWasDown && r == HIGH) {
-    unsigned long d = t - btnStart;
-    btnWasDown = false; menuTimer=t;
-
-    if (d < LONG_PRESS_TIME) {
-      // short press = cycle menu
-      calibIndex = (calibIndex + 1) % 3;
+    if (btnDown && r == HIGH) {
+      btnDown = false;
+      calibMenu = MENU_ON;
+      calibIndex = 0;
+      menuTimer = t;
       drawCalibMenu();
     }
+    return;
   }
 
-  // timeout
+  // ---- MENU MODE ----
+  if (!btnDown && r == LOW) {
+    btnDown = true;
+    t0 = t;
+    longFired = false;
+  }
+
+  if (btnDown && r == LOW) {
+    if (!longFired && t - t0 > LONG_PRESS_TIME) {
+      longFired = true;
+      calibMenu = MENU_OFF;
+      display.clearDisplay();
+      if (calibIndex==0) calibrate_air();
+      if (calibIndex==1) calibrate_he();
+      #if ADVANCED_FEATURES
+      if (calibIndex==2) calibrate_oxygen();
+      #endif
+      btnDown = false;
+      justCalibrated = true;
+    }
+  }
+
+  if (btnDown && r == HIGH) {
+    btnDown = false;
+
+    if (!longFired) {
+      calibIndex = (calibIndex + 1) % CALIB_ITEMS;
+      drawCalibMenu();
+    }
+
+    menuTimer = t;
+  }
+
   if (t - menuTimer > MENU_TIMEOUT) {
     calibMenu = MENU_OFF;
     show_bottom_message("Menu timeout");
-    delay(800);
+    delay(500);
     display.clearDisplay();
   }
 }
-#else
-void handle_calibration_button_short_long() {
-  static bool button_pressed = false;
-  static bool long_press_triggered = false;
-  static unsigned long press_start_time = 0;
-  static unsigned long last_debounce_time = 0;
-  const unsigned long debounce_delay = 50;
-
-  int reading = digitalRead(CALIBRATION_BUTTON_PIN);
-
-  // Debounce: only accept changes after stable state
-  if (millis() - last_debounce_time > debounce_delay) {
-    if (reading == LOW && !button_pressed) {
-      // Button just pressed
-      button_pressed = true;
-      long_press_triggered = false;
-      press_start_time = millis();
-      last_debounce_time = millis();
-    }
-
-    if (button_pressed && reading == LOW) {
-      // Button is being held
-      unsigned long press_duration = millis() - press_start_time;
-      if (!long_press_triggered && press_duration >= LONG_PRESS_TIME) {
-        long_press_triggered = true;
-        calibrate_he();  // Long press triggers He calibration
-      }
-    }
-
-    if (button_pressed && reading == HIGH) {
-      // Button released
-      unsigned long press_duration = millis() - press_start_time;
-      button_pressed = false;
-      last_debounce_time = millis();
-
-      if (!long_press_triggered && press_duration < LONG_PRESS_TIME) {
-        calibrate_air();  // Short press triggers air calibration
-      }
-    }
-  }
-}
-#endif
 
 // ---------- Measurement Update ----------
 void update_measurements() {
@@ -517,7 +483,6 @@ void validate_nonlinear_calibration(float a, float b){
 }
 #endif
 
-
 // ---------- Setup ----------
 void setup(void) {
   Serial.begin(9600);
@@ -587,11 +552,6 @@ void loop() {
     display.display();
   }
 
-  // Manual recalibration when button is pressed
-#if ADVANCED_FEATURES
-  handle_calibration_button_with_menu();
-#else
-  handle_calibration_button_short_long();
-#endif
+  handle_calibration_button();
   delay(100);
 }

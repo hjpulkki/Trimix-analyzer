@@ -41,6 +41,9 @@ float min_pure_he_mv = 200;       // Minimum valid He sensor voltage for 100% He
 float max_he_zero = 100;          // Maximum absolute value for the zero point of He sensor
 float max_vo2_for_he = 1;        // Maximum O2 sensor reading for 100% Helium (Mv)
 
+bool sensor_warning = false;    // if raised, stays on until power cycle
+
+
 FlashStorage(magicStore, uint32_t);
 FlashStorage(hecorrStore, float);
 
@@ -91,6 +94,21 @@ void show_bottom_message(const String &line1, const String &line2 = "", const St
   if (line3.length()) { display.setCursor(10, 40); display.print(line3); }
   display.display();
   display.setCursor(5, 50);
+}
+
+void draw_warning_icon(int x, int y) {
+  display.drawTriangle(
+      x, y + 10,
+      x + 10, y + 10,
+      x + 5, y,
+      SH110X_WHITE);
+
+  display.drawLine(x + 5, y + 3,
+                   x + 5, y + 7,
+                   SH110X_WHITE);
+
+  display.drawPixel(x + 5, y + 9,
+                    SH110X_WHITE);
 }
 
 void handle_button() {
@@ -180,27 +198,31 @@ void calibrate_air() {
     show_bottom_message("Error: Low O2 mV",
                         "Replace O2 Cell",
                         "Measured: " + String(o2_voltage,2) + " mV");
-    delay(10000);  return;
+    delay(4000);
+    sensor_warning = true;
   }
-
-  o2_calib = o2_voltage; // store reference o2_voltage for 20.9% O2
-
   if (abs(he_voltage) > max_he_zero) {
     show_bottom_message("Error: He Zero",
                         "Adjust R4",
-                        "He Zero = " + String(he_zero,0) + " mV");
-    delay(10000);
-    return;
+                        "He Zero = " + String(he_voltage,0) + " mV");
+    delay(4000);
+    sensor_warning = true;
   }
+  o2_calib = o2_voltage;
   he_zero = he_voltage;
 
-  show_bottom_message("O2 Calibration OK",
-                      "O2 Ref = " + String(o2_calib,2) + " mV",
-                      "He Zero = " + String(he_zero,0) + " mV");
-  delay(2000);
+  show_bottom_message(
+      sensor_warning ? "Calibration WARN" : "Calibration OK",
+      "O2 Ref = " + String(o2_calib,2) + " mV",
+      "He Zero = " + String(he_zero,0) + " mV");
+
+  delay(4000);
 }
 
 void save_he_span() {
+  if (sensor_warning)
+    return;
+
   magicStore.write(MAGIC_VALUE);
   hecorrStore.write(he_span);
 }
@@ -209,13 +231,14 @@ void load_he_span() {
   // Stores the helium calibration in flash memory; only needed occasionally.
   uint32_t magic = magicStore.read();
   if (magic == MAGIC_VALUE) {
+    he_span = hecorrStore.read();
     show_bottom_message("Loaded He Span", "Source: EEPROM",
                         "He Span=" + String(he_span,0));
   } else {
-    show_bottom_message("Loaded He Span", "Source: Default",
+    show_bottom_message("No saved He Span", "Source: Default",
                         "He Span=" + String(he_span,0));
   }
-  delay(2000);
+  delay(4000);
 }
 
 void calibrate_he() {
@@ -228,26 +251,27 @@ void calibrate_he() {
     show_bottom_message("Error: He Too Low",
                         "Check gas",
                         "He mV = " + String(he_voltage,0));
-    delay(10000);
-    return;
+    delay(4000);
+    sensor_warning = true;
   }
-
   if (o2_voltage > max_vo2_for_he) {
     show_bottom_message("Error: O2 Present",
                         "Not 100% He",
                         "O2 mV = " + String(o2_voltage,2));
-    delay(10000);
-    return;
+    delay(4000);
+    sensor_warning = true;
   }
+  pure_he_mv = he_voltage - he_zero;
+  he_span = pure_he_mv * (100 / 87.083);
 
-  pure_he_mv = he_voltage - he_zero;  // Measured mV @ 100% He
-  he_span = pure_he_mv * (100 / 87.083);   // adjust so user enters real mV@100%He
-  save_he_span(); // Save value in EEPROM.
+  save_he_span();
 
-  show_bottom_message("He Calibration OK",
-                      "He mV = " + String(he_voltage,2),
-                      "O2 mV = " + String(o2_voltage,2));
-  delay(2000);
+  show_bottom_message(
+      sensor_warning ? "Calibration WARN" : "He Calibration OK",
+      "He mV = " + String(he_voltage,2),
+      "O2 mV = " + String(o2_voltage,2));
+
+  delay(4000);
 }
 
 // ---------- Setup ----------
@@ -322,6 +346,10 @@ void loop() {
     display.setCursor(10, 45);
     display.print(nitrox, 1);
   }
+
+  if (sensor_warning)
+    draw_warning_icon(118, 25);
+
   display.display();
 
   // Manual recalibration when button is pressed

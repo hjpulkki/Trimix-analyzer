@@ -65,7 +65,6 @@ const char* calibItems[] = {
 constexpr int CALIB_ITEMS = sizeof(calibItems) / sizeof(calibItems[0]);
 int calibIndex = 0; // 0=Air,1=He,2=O2
 const unsigned long MENU_TIMEOUT = 8000;
-bool justCalibrated = false;
 unsigned long menuTimer = 0;
 
 #if ADVANCED_FEATURES
@@ -189,7 +188,6 @@ void handle_calibration_button() {
       if (calibIndex==2) calibrate_oxygen();
       #endif
       btnDown = false;
-      justCalibrated = true;
     }
   }
 
@@ -224,7 +222,7 @@ void update_measurements() {
   o2_voltage = ra_o2.getAverage() * (0.256 / 32768.0 * 1000);
 
   // Voltage is negative only if the sensor is plugged in the wrong way
-  o2_voltage = abs(o2_voltage);
+  o2_voltage = fabs(o2_voltage);
 
   // --- Channel 2–3: 0–650 mV ---
   ads.setGain(GAIN_FOUR);                    // ±1.024 V range
@@ -293,7 +291,7 @@ void calibrate_air() {
     sensor_warning = true;
   }
 
-  if (abs(he_voltage) > MAX_HE_ZERO) {
+  if (fabs(he_voltage) > MAX_HE_ZERO) {
     show_bottom_message("Error: He Zero",
                         "Adjust R4",
                         "He Zero = " + String(he_voltage,0) + " mV");
@@ -342,6 +340,8 @@ void load_he_span() {
 
 #if ADVANCED_FEATURES
 void save_o2_calibration() {
+  // Save even if there are sensor warnings.
+  
   o2MagicStore.write(MAGIC_VALUE);
   o2bStore.write(o2_calib_b);
   o2CompStore.write(o2_comp_k);
@@ -358,7 +358,7 @@ void load_o2_calibration() {
     show_bottom_message("Loaded O2 Calib", "Source: Default",
                         "b=" + String(o2_calib_b,4) + " k=" + String(o2_comp_k,4));
   }
-  delay(2000);
+  delay(4000);
 }
 #endif
 
@@ -414,27 +414,27 @@ void calibrate_oxygen()
   float denom = o2_calib_21 * o2_voltage * (o2_voltage - o2_calib_21);
 
   if (fabs(denom) < EPS) {
-      apply_linear_calibration();
-      show_bottom_message(
-          "O2 Calib Error",
-          "Check gas",
-          "Using linear"
-      );
-      delay(10000);
-      return;
+    apply_linear_calibration();
+    show_bottom_message(
+        "O2 Calib Error",
+        "Check gas",
+        "Using linear"
+    );
+    delay(4000);
+  } else{
+
+    o2_calib_b = (100.0 * o2_calib_21 - 20.9 * o2_voltage) / denom;
+    o2_calib_a = (20.9 - o2_calib_b * o2_calib_21 * o2_calib_21) / o2_calib_21;
+    validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
+
+    // Update o2 compensation for he voltage
+    o2_comp_k = (he_voltage-he_zero)*o2_calib_21/(o2_voltage-o2_calib_21);
+    show_bottom_message(
+        "O2 compensation",
+        "k = " + String(o2_comp_k, 4)
+    );
+    delay(4000);
   }
-
-  o2_calib_b = (100.0 * o2_calib_21 - 20.9 * o2_voltage) / denom;
-  o2_calib_a = (20.9 - o2_calib_b * o2_calib_21 * o2_calib_21) / o2_calib_21;
-  validate_nonlinear_calibration(o2_calib_a, o2_calib_b);
-
-  // Update o2 compensation for he voltage
-  o2_comp_k = (he_voltage-he_zero)*o2_calib_21/(o2_voltage-o2_calib_21);
-  show_bottom_message(
-      "O2 compensation",
-      "k = " + String(o2_comp_k, 4)
-  );
-  delay(2000);
 
   // Save calibration even if validation fails. In this case saves b=0.
   save_o2_calibration();
@@ -479,7 +479,7 @@ void validate_nonlinear_calibration(float a, float b){
       "a = " + String(a, 1),
       "b = " + String(b, 4)
   );
-  delay(2000);
+  delay(4000);
 }
 #endif
 
